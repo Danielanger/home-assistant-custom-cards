@@ -1,4 +1,4 @@
-const ROOM_DETAIL_CARD_VERSION = "0.2.0";
+const ROOM_DETAIL_CARD_VERSION = "0.2.1";
 
 const clone = (value) => {
   if (typeof structuredClone === "function") {
@@ -126,20 +126,22 @@ class RoomDetailCard extends HTMLElement {
 
         .back-button {
           position: fixed;
-          right: max(18px, env(safe-area-inset-right));
-          bottom: max(18px, env(safe-area-inset-bottom));
-          width: 54px;
-          height: 54px;
-          border: 0;
+          right: max(20px, env(safe-area-inset-right));
+          bottom: max(20px, env(safe-area-inset-bottom));
+          width: 64px;
+          height: 64px;
+          border: 1px solid rgba(255, 193, 7, 0.35);
           border-radius: 50%;
           display: ${showBack ? "grid" : "none"};
           place-items: center;
           cursor: pointer;
-          color: var(--primary-text-color);
-          background: var(--ha-card-background, var(--card-background-color));
+          color: rgb(255, 193, 7);
+          background: rgba(255, 193, 7, 0.18);
           box-shadow:
-            0 3px 10px rgba(0, 0, 0, 0.28),
-            0 1px 3px rgba(0, 0, 0, 0.20);
+            0 6px 18px rgba(0, 0, 0, 0.35),
+            0 2px 6px rgba(0, 0, 0, 0.22);
+          backdrop-filter: blur(12px);
+          -webkit-backdrop-filter: blur(12px);
           z-index: 10;
           -webkit-tap-highlight-color: transparent;
           transition: transform 120ms ease, box-shadow 120ms ease;
@@ -148,8 +150,8 @@ class RoomDetailCard extends HTMLElement {
         .back-button:hover {
           transform: translateY(-1px);
           box-shadow:
-            0 5px 14px rgba(0, 0, 0, 0.30),
-            0 2px 5px rgba(0, 0, 0, 0.20);
+            0 8px 22px rgba(0, 0, 0, 0.38),
+            0 3px 8px rgba(0, 0, 0, 0.24);
         }
 
         .back-button:active {
@@ -157,8 +159,8 @@ class RoomDetailCard extends HTMLElement {
         }
 
         .back-button ha-icon {
-          width: 26px;
-          height: 26px;
+          width: 30px;
+          height: 30px;
         }
 
         .error {
