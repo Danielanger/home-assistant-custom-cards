@@ -6,7 +6,7 @@
  * Card type: custom:room-navigation-card
  */
 
-const ROOM_NAV_CARD_VERSION = "0.2.6";
+const ROOM_NAV_CARD_VERSION = "0.2.7";
 const ACTIVE_STATES = new Set([
   "on",
   "open",
@@ -421,9 +421,10 @@ class RoomNavigationCard extends HTMLElement {
           justify-content: flex-start;
 
           transition:
-            transform 180ms cubic-bezier(0.2, 0.8, 0.2, 1),
-            box-shadow 180ms ease,
-            filter 180ms ease;
+            transform 120ms cubic-bezier(0.2, 0.8, 0.2, 1),
+            box-shadow 120ms ease,
+            filter 120ms ease,
+            background-color 120ms ease;
 
           will-change: transform;
           -webkit-tap-highlight-color: transparent;
@@ -531,27 +532,33 @@ class RoomNavigationCard extends HTMLElement {
          */
         @media (hover: hover) and (pointer: fine) {
           .room-tile:hover {
-            z-index: 10;
-            transform: translateY(-4px) scale(1.015);
+            z-index: 50;
+
+            /* Deliberately strong lift so the hover is clearly visible. */
+            transform: translateY(-10px) scale(1.03);
 
             box-shadow:
-              0 14px 30px rgba(0, 0, 0, 0.22),
-              0 4px 10px rgba(0, 0, 0, 0.14);
+              0 24px 52px rgba(0, 0, 0, 0.42),
+              0 10px 24px rgba(0, 0, 0, 0.28),
+              0 0 0 1px rgba(255, 255, 255, 0.10);
 
-            filter: brightness(1.035);
+            filter: brightness(1.08);
           }
 
           .room-tile:hover .icon-cell {
-            transform: scale(1.08);
+            transform: translateY(-1px) scale(1.13);
 
             box-shadow:
-              0 5px 14px rgba(0, 0, 0, 0.12);
+              0 8px 20px rgba(0, 0, 0, 0.24);
           }
         }
 
         .room-tile:active {
-          transform: translateY(-1px) scale(0.985);
-          transition-duration: 70ms;
+          transform: translateY(-4px) scale(0.985);
+          box-shadow:
+            0 10px 22px rgba(0, 0, 0, 0.28),
+            0 3px 8px rgba(0, 0, 0, 0.18);
+          transition-duration: 60ms;
         }
 
         @media (max-width: 520px) {
