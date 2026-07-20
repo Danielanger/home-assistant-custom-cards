@@ -1,4 +1,4 @@
-const ROOM_DETAIL_CARD_VERSION = "0.2.1";
+const ROOM_DETAIL_CARD_VERSION = "0.2.2";
 
 const clone = (value) => {
   if (typeof structuredClone === "function") {
@@ -132,8 +132,11 @@ class RoomDetailCard extends HTMLElement {
           height: 64px;
           border: 1px solid rgba(255, 193, 7, 0.35);
           border-radius: 50%;
-          display: ${showBack ? "grid" : "none"};
-          place-items: center;
+          display: ${showBack ? "flex" : "none"};
+          align-items: center;
+          justify-content: center;
+          line-height: 0;
+          padding: 0;
           cursor: pointer;
           color: rgb(255, 193, 7);
           background: rgba(255, 193, 7, 0.18);
@@ -159,8 +162,14 @@ class RoomDetailCard extends HTMLElement {
         }
 
         .back-button ha-icon {
-          width: 30px;
-          height: 30px;
+          width: 36px;
+          height: 36px;
+          --mdc-icon-size: 36px;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          margin: 0;
+          padding: 0;
         }
 
         .error {
