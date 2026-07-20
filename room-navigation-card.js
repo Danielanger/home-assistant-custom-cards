@@ -1,12 +1,22 @@
 /*
  * Room Navigation Card for Home Assistant
- * Reusable room overview/navigation card with a visual editor.
+ * Version 0.2.6
  *
+ * Reusable room / navigation overview card with visual editor.
  * Card type: custom:room-navigation-card
  */
 
-const ROOM_NAV_CARD_VERSION = "0.2.5";
-const ACTIVE_STATES = new Set(["on", "open", "opening", "unlocked", "home", "playing"]);
+const ROOM_NAV_CARD_VERSION = "0.2.6";
+const ACTIVE_STATES = new Set([
+  "on",
+  "open",
+  "opening",
+  "unlocked",
+  "home",
+  "playing",
+  "heat",
+  "heating",
+]);
 
 class RoomNavigationCard extends HTMLElement {
   constructor() {
@@ -21,6 +31,7 @@ class RoomNavigationCard extends HTMLElement {
       title: "Räume",
       columns: 3,
       show_greeting: false,
+      show_title: true,
       show_info: true,
       rooms: [
         {
@@ -29,6 +40,8 @@ class RoomNavigationCard extends HTMLElement {
           navigation_path: "wohnzimmer",
           status_entities: [],
           climate_entity: "",
+          temperature_entity: "",
+          humidity_entity: "",
           door_entities: [],
           window_entities: [],
           heating_entities: [],
@@ -49,14 +62,17 @@ class RoomNavigationCard extends HTMLElement {
     if (!config || typeof config !== "object") {
       throw new Error("Ungültige Konfiguration");
     }
+
     this._config = {
       title: "Räume",
       columns: 3,
       show_greeting: false,
+      show_title: true,
       show_info: true,
       rooms: [],
       ...config,
     };
+
     this._render();
   }
 
@@ -66,28 +82,42 @@ class RoomNavigationCard extends HTMLElement {
   }
 
   getCardSize() {
-    const roomCount = Array.isArray(this._config.rooms) ? this._config.rooms.length : 0;
+    const roomCount = Array.isArray(this._config.rooms)
+      ? this._config.rooms.length
+      : 0;
     const columns = Math.max(1, Number(this._config.columns) || 3);
-    return Math.max(2, Math.ceil(roomCount / columns) * 3 + (this._config.show_greeting ? 2 : 1));
+
+    return Math.max(
+      2,
+      Math.ceil(roomCount / columns) * 3 +
+        (this._config.show_greeting ? 2 : 1)
+    );
   }
 
   _isActive(entityId) {
-    if (!entityId || !this._hass?.states?.[entityId]) return false;
-    return ACTIVE_STATES.has(String(this._hass.states[entityId].state).toLowerCase());
+    const stateObj = entityId ? this._hass?.states?.[entityId] : undefined;
+    if (!stateObj) return false;
+
+    return ACTIVE_STATES.has(String(stateObj.state).toLowerCase());
   }
 
   _anyActive(entityIds) {
-    return normalizeEntityList(entityIds).some((entityId) => this._isActive(entityId));
+    return normalizeEntityList(entityIds).some((entityId) =>
+      this._isActive(entityId)
+    );
   }
 
   _formatNumber(value, decimals = 1) {
     const numeric = Number(value);
     if (!Number.isFinite(numeric)) return value ?? "—";
+
     return numeric.toFixed(decimals).replace(".", ",");
   }
 
   _unit(entityId) {
-    return this._hass?.states?.[entityId]?.attributes?.unit_of_measurement || "";
+    return (
+      this._hass?.states?.[entityId]?.attributes?.unit_of_measurement || ""
+    );
   }
 
   _roomInfo(room) {
@@ -95,13 +125,23 @@ class RoomNavigationCard extends HTMLElement {
 
     if (room.climate_entity) {
       const climate = this._hass.states[room.climate_entity];
+
       if (climate) {
         const current = climate.attributes?.current_temperature;
         const target = climate.attributes?.temperature;
-        const unit = this._hass.config?.unit_system?.temperature || "°C";
-        if (current !== undefined && target !== undefined && target !== null) {
-          return `${this._formatNumber(current)}${unit} → ${this._formatNumber(target)}${unit}`;
+        const unit =
+          this._hass.config?.unit_system?.temperature || "°C";
+
+        if (
+          current !== undefined &&
+          target !== undefined &&
+          target !== null
+        ) {
+          return `${this._formatNumber(current)}${unit} → ${this._formatNumber(
+            target
+          )}${unit}`;
         }
+
         if (current !== undefined) {
           return `${this._formatNumber(current)}${unit}`;
         }
@@ -110,25 +150,31 @@ class RoomNavigationCard extends HTMLElement {
 
     if (room.temperature_entity || room.humidity_entity) {
       const values = [];
+
       if (room.temperature_entity) {
         const state = this._hass.states[room.temperature_entity];
+
         if (state) {
           const unit = this._unit(room.temperature_entity) || "°C";
           values.push(`${this._formatNumber(state.state, 2)}${unit}`);
         }
       }
+
       if (room.humidity_entity) {
         const state = this._hass.states[room.humidity_entity];
+
         if (state) {
           const unit = this._unit(room.humidity_entity) || "%";
           values.push(`${this._formatNumber(state.state, 2)}${unit}`);
         }
       }
+
       return values.join(" / ");
     }
 
     if (room.info_entity) {
       const state = this._hass.states[room.info_entity];
+
       if (state) {
         return `${state.state}${this._unit(room.info_entity)}`;
       }
@@ -140,42 +186,90 @@ class RoomNavigationCard extends HTMLElement {
   _greeting() {
     const hour = new Date().getHours();
     const userName = this._hass?.user?.name || "";
-    if (hour >= 18) return `Guten Abend${userName ? `, ${userName}` : ""}!`;
-    if (hour >= 12) return `Hallo${userName ? `, ${userName}` : ""}!`;
-    if (hour >= 5) return `Guten Morgen${userName ? `, ${userName}` : ""}!`;
+
+    if (hour >= 18) {
+      return `Guten Abend${userName ? `, ${userName}` : ""}!`;
+    }
+
+    if (hour >= 12) {
+      return `Hallo${userName ? `, ${userName}` : ""}!`;
+    }
+
+    if (hour >= 5) {
+      return `Guten Morgen${userName ? `, ${userName}` : ""}!`;
+    }
+
     return `Hallo${userName ? `, ${userName}` : ""}!`;
   }
 
   _renderStatusIcons(room) {
-    const doorsOpen = this._anyActive(room.door_entities || room.door_entity);
-    const windowsOpen = this._anyActive(room.window_entities || room.window_entity);
-    const heatingActive = this._anyActive(room.heating_entities || room.heating_entity);
-    const electricHeatingActive = this._anyActive(room.electric_heating_entities || room.electric_heating_entity);
-    const fanActive = this._anyActive(room.fan_entities || room.fan_entity);
-    const motionActive = this._anyActive(room.motion_entities || room.motion_entity);
+    const doorsOpen = this._anyActive(
+      room.door_entities || room.door_entity
+    );
+    const windowsOpen = this._anyActive(
+      room.window_entities || room.window_entity
+    );
+    const heatingActive = this._anyActive(
+      room.heating_entities || room.heating_entity
+    );
+    const electricHeatingActive = this._anyActive(
+      room.electric_heating_entities || room.electric_heating_entity
+    );
+    const fanActive = this._anyActive(
+      room.fan_entities || room.fan_entity
+    );
+    const motionActive = this._anyActive(
+      room.motion_entities || room.motion_entity
+    );
 
     const leftIcons = [
-      doorsOpen ? '<ha-icon icon="mdi:door-open" title="Tür offen"></ha-icon>' : "",
-      windowsOpen ? '<ha-icon icon="mdi:window-open" title="Fenster offen"></ha-icon>' : "",
-    ].filter(Boolean).join("");
+      doorsOpen
+        ? '<ha-icon icon="mdi:door-open" title="Tür offen"></ha-icon>'
+        : "",
+      windowsOpen
+        ? '<ha-icon icon="mdi:window-open" title="Fenster offen"></ha-icon>'
+        : "",
+    ]
+      .filter(Boolean)
+      .join("");
 
     const rightIcons = [
-      heatingActive ? '<ha-icon icon="mdi:heat-wave" title="Heizungsanforderung aktiv"></ha-icon>' : "",
-      electricHeatingActive ? '<ha-icon icon="mdi:flash" title="Elektrische Heizung aktiv"></ha-icon>' : "",
-      fanActive ? '<ha-icon icon="mdi:fan" title="Lüfter aktiv"></ha-icon>' : "",
-      motionActive ? '<ha-icon icon="mdi:run" title="Bewegung erkannt"></ha-icon>' : "",
-    ].filter(Boolean).join("");
+      heatingActive
+        ? '<ha-icon icon="mdi:heat-wave" title="Heizungsanforderung aktiv"></ha-icon>'
+        : "",
+      electricHeatingActive
+        ? '<ha-icon icon="mdi:flash" title="Elektrische Heizung aktiv"></ha-icon>'
+        : "",
+      fanActive
+        ? '<ha-icon icon="mdi:fan" title="Lüfter aktiv"></ha-icon>'
+        : "",
+      motionActive
+        ? '<ha-icon icon="mdi:run" title="Bewegung erkannt"></ha-icon>'
+        : "",
+    ]
+      .filter(Boolean)
+      .join("");
 
     if (!leftIcons && !rightIcons) return "";
 
     return `
-      ${leftIcons ? `<div class="openings" aria-label="Offene Fenster oder Türen">${leftIcons}</div>` : ""}
-      ${rightIcons ? `<div class="activity-icons" aria-label="Aktive Raumstatus">${rightIcons}</div>` : ""}
+      ${
+        leftIcons
+          ? `<div class="openings" aria-label="Offene Fenster oder Türen">${leftIcons}</div>`
+          : ""
+      }
+      ${
+        rightIcons
+          ? `<div class="activity-icons" aria-label="Aktive Raumstatus">${rightIcons}</div>`
+          : ""
+      }
     `;
   }
 
   _renderRoom(room, index) {
-    const isActive = this._anyActive(room.status_entities || room.status_entity);
+    const isActive = this._anyActive(
+      room.status_entities || room.status_entity
+    );
     const showInfo = this._config.show_info !== false;
     const info = showInfo ? escapeHtml(this._roomInfo(room)) : "";
     const name = escapeHtml(room.name || `Raum ${index + 1}`);
@@ -184,7 +278,9 @@ class RoomNavigationCard extends HTMLElement {
 
     return `
       <button
-        class="room-tile ${isActive ? "active" : "inactive"} ${showInfo ? "" : "compact"}"
+        class="room-tile ${isActive ? "active" : "inactive"} ${
+      showInfo ? "" : "compact"
+    }"
         type="button"
         data-room-index="${index}"
         data-navigation-path="${path}"
@@ -193,7 +289,11 @@ class RoomNavigationCard extends HTMLElement {
         ${this._renderStatusIcons(room)}
         <div class="icon-cell"><ha-icon icon="${icon}"></ha-icon></div>
         <div class="room-name">${name}</div>
-        ${showInfo ? `<div class="room-info">${info || "&nbsp;"}</div>` : ""}
+        ${
+          showInfo
+            ? `<div class="room-info">${info || "&nbsp;"}</div>`
+            : ""
+        }
       </button>
     `;
   }
@@ -207,30 +307,57 @@ class RoomNavigationCard extends HTMLElement {
     }
 
     const url = new URL(path, window.location.href);
-    window.history.pushState(null, "", `${url.pathname}${url.search}${url.hash}`);
-    window.dispatchEvent(new Event("location-changed", { bubbles: true, composed: true }));
+    window.history.pushState(
+      null,
+      "",
+      `${url.pathname}${url.search}${url.hash}`
+    );
+    window.dispatchEvent(
+      new Event("location-changed", {
+        bubbles: true,
+        composed: true,
+      })
+    );
   }
 
   _render() {
     if (!this.shadowRoot || !this._config) return;
 
-    const rooms = Array.isArray(this._config.rooms) ? this._config.rooms : [];
-    const columns = Math.max(1, Math.min(6, Number(this._config.columns) || 3));
+    const rooms = Array.isArray(this._config.rooms)
+      ? this._config.rooms
+      : [];
+    const columns = Math.max(
+      1,
+      Math.min(6, Number(this._config.columns) || 3)
+    );
     const title = escapeHtml(this._config.title || "Räume");
 
     this.shadowRoot.innerHTML = `
       <style>
         :host {
           display: block;
+
           --room-nav-active: rgb(255, 193, 7);
+          --room-nav-active-bg: rgba(255, 193, 7, 0.2);
+
           --room-nav-inactive: rgb(33, 150, 243);
-          --room-nav-card-bg: var(--ha-card-background, var(--card-background-color));
+          --room-nav-inactive-bg: rgba(33, 150, 243, 0.2);
+
+          --room-nav-card-bg: var(
+            --ha-card-background,
+            var(--card-background-color)
+          );
         }
 
         ha-card {
           background: transparent;
           box-shadow: none;
           border: none;
+          overflow: visible;
+        }
+
+        .wrapper,
+        .grid {
           overflow: visible;
         }
 
@@ -242,16 +369,19 @@ class RoomNavigationCard extends HTMLElement {
           background: var(--room-nav-card-bg);
           border-radius: 999px;
           padding: 16px 24px;
-          margin: 0 0 24px;
+          margin: 0 0 20px;
           text-align: center;
           font-size: 1.05rem;
           font-weight: 600;
           box-shadow: var(--ha-card-box-shadow, none);
-          border: var(--ha-card-border-width, 0) solid var(--ha-card-border-color, transparent);
+          border:
+            var(--ha-card-border-width, 0)
+            solid
+            var(--ha-card-border-color, transparent);
         }
 
         .title {
-          margin: 4px 0 22px;
+          margin: 4px 0 18px;
           text-align: center;
           font-size: clamp(2rem, 4vw, 2.8rem);
           font-weight: 700;
@@ -266,30 +396,37 @@ class RoomNavigationCard extends HTMLElement {
 
         .room-tile {
           position: relative;
+          z-index: 1;
           box-sizing: border-box;
+
           min-height: 110px;
           padding: 9px 6px 6px;
-          border: var(--ha-card-border-width, 0) solid var(--ha-card-border-color, transparent);
+
+          border:
+            var(--ha-card-border-width, 0)
+            solid
+            var(--ha-card-border-color, transparent);
           border-radius: var(--ha-card-border-radius, 16px);
+
           background: var(--room-nav-card-bg);
           color: var(--primary-text-color);
           font: inherit;
+
           cursor: pointer;
           box-shadow: var(--ha-card-box-shadow, none);
+
           display: flex;
           flex-direction: column;
           align-items: center;
           justify-content: flex-start;
-          transition: transform 120ms ease, filter 120ms ease;
+
+          transition:
+            transform 180ms cubic-bezier(0.2, 0.8, 0.2, 1),
+            box-shadow 180ms ease,
+            filter 180ms ease;
+
+          will-change: transform;
           -webkit-tap-highlight-color: transparent;
-        }
-
-        .room-tile:hover {
-          filter: brightness(1.04);
-        }
-
-        .room-tile:active {
-          transform: scale(0.985);
         }
 
         .room-tile:focus-visible {
@@ -301,16 +438,23 @@ class RoomNavigationCard extends HTMLElement {
           width: 40px;
           height: 40px;
           border-radius: 20px;
+
           display: grid;
           place-items: center;
+
           margin: 0 0 7px;
+
           color: var(--room-nav-inactive);
-          background: rgba(33, 150, 243, 0.20);
+          background: var(--room-nav-inactive-bg);
+
+          transition:
+            transform 180ms cubic-bezier(0.2, 0.8, 0.2, 1),
+            box-shadow 180ms ease;
         }
 
         .active .icon-cell {
           color: var(--room-nav-active);
-          background: rgba(255, 193, 7, 0.2);
+          background: var(--room-nav-active-bg);
         }
 
         .icon-cell ha-icon {
@@ -318,15 +462,16 @@ class RoomNavigationCard extends HTMLElement {
         }
 
         .room-name {
-          font-size: 0.95rem;
+          font-size: 0.88rem;
           font-weight: 700;
-          line-height: 1.2;
+          line-height: 1.15;
           text-align: center;
         }
 
         .room-info {
           min-height: 1.2em;
           margin-top: 5px;
+
           color: var(--secondary-text-color);
           font-size: 0.86rem;
           line-height: 1.15;
@@ -334,7 +479,6 @@ class RoomNavigationCard extends HTMLElement {
           white-space: nowrap;
         }
 
-        /* Compact mode is intended for navigation/data tiles without a second line. */
         .room-tile.compact {
           min-height: 96px;
           padding-top: 7px;
@@ -348,12 +492,14 @@ class RoomNavigationCard extends HTMLElement {
 
         .openings {
           position: absolute;
-          top: 6px;
-          left: 6px;
+          top: 7px;
+          left: 7px;
+
           display: flex;
           flex-direction: column;
           gap: 1px;
-          color: var(--warning-color, #ffd363);
+
+          color: #ffd363;
           pointer-events: none;
         }
 
@@ -363,11 +509,13 @@ class RoomNavigationCard extends HTMLElement {
 
         .activity-icons {
           position: absolute;
-          top: 6px;
-          right: 6px;
+          top: 7px;
+          right: 7px;
+
           display: flex;
           flex-direction: column;
           gap: 1px;
+
           color: var(--error-color, red);
           pointer-events: none;
         }
@@ -376,58 +524,91 @@ class RoomNavigationCard extends HTMLElement {
           --mdc-icon-size: 18px;
         }
 
+        /*
+         * Desktop / Laptop hover effect.
+         * Only enabled for devices that really support hovering with a fine
+         * pointer (mouse/trackpad), so touch devices are unaffected.
+         */
+        @media (hover: hover) and (pointer: fine) {
+          .room-tile:hover {
+            z-index: 10;
+            transform: translateY(-4px) scale(1.015);
+
+            box-shadow:
+              0 14px 30px rgba(0, 0, 0, 0.22),
+              0 4px 10px rgba(0, 0, 0, 0.14);
+
+            filter: brightness(1.035);
+          }
+
+          .room-tile:hover .icon-cell {
+            transform: scale(1.08);
+
+            box-shadow:
+              0 5px 14px rgba(0, 0, 0, 0.12);
+          }
+        }
+
+        .room-tile:active {
+          transform: translateY(-1px) scale(0.985);
+          transition-duration: 70ms;
+        }
+
         @media (max-width: 520px) {
           .grid {
             gap: 7px;
           }
+
           .room-tile {
             min-height: 106px;
             padding: 8px 4px 6px;
           }
+
           .room-tile.compact {
             min-height: 92px;
             padding-top: 6px;
             padding-bottom: 6px;
           }
-          .icon-cell {
-            width: 38px;
-            height: 38px;
-            margin-bottom: 7px;
-          }
-          .icon-cell ha-icon {
-            --mdc-icon-size: 24px;
-          }
+
           .room-name {
-            font-size: 0.9rem;
+            font-size: 0.84rem;
           }
+
           .room-info {
-            font-size: 0.8rem;
-          }
-          .openings,
-          .activity-icons {
-            top: 5px;
-          }
-          .openings { left: 5px; }
-          .activity-icons { right: 5px; }
-          .openings ha-icon,
-          .activity-icons ha-icon {
-            --mdc-icon-size: 17px;
+            font-size: 0.82rem;
           }
         }
       </style>
+
       <ha-card>
         <div class="wrapper">
-          ${this._config.show_greeting ? `<div class="greeting">${escapeHtml(this._greeting())}</div>` : ""}
-          ${this._config.show_title === false ? "" : `<div class="title">${title}</div>`}
+          ${
+            this._config.show_greeting
+              ? `<div class="greeting">${escapeHtml(
+                  this._greeting()
+                )}</div>`
+              : ""
+          }
+
+          ${
+            this._config.show_title === false
+              ? ""
+              : `<div class="title">${title}</div>`
+          }
+
           <div class="grid">
-            ${rooms.map((room, index) => this._renderRoom(room, index)).join("")}
+            ${rooms
+              .map((room, index) => this._renderRoom(room, index))
+              .join("")}
           </div>
         </div>
       </ha-card>
     `;
 
     this.shadowRoot.querySelectorAll(".room-tile").forEach((element) => {
-      element.addEventListener("click", () => this._navigate(element.dataset.navigationPath));
+      element.addEventListener("click", () =>
+        this._navigate(element.dataset.navigationPath)
+      );
     });
   }
 }
@@ -435,28 +616,29 @@ class RoomNavigationCard extends HTMLElement {
 class RoomNavigationCardEditor extends HTMLElement {
   constructor() {
     super();
+
     this.attachShadow({ mode: "open" });
+
     this._config = {};
     this._hass = undefined;
 
-    // Editor state must survive Home Assistant's frequent hass/config updates.
-    // Rebuilding the entire editor on every update causes focus loss, scroll jumps
-    // and previously opened rooms collapsing back to the first room.
     this._rendered = false;
     this._openRoomIndexes = new Set();
     this._openStateInitialized = false;
+
+    // Prevent Home Assistant from immediately re-rendering the whole editor
+    // when it sends our own config-changed event back through setConfig().
     this._emittedConfigHashes = new Set();
   }
 
   set hass(hass) {
     this._hass = hass;
 
-    // Home Assistant updates `hass` very frequently. Never rebuild the editor
-    // for those updates; just pass the new hass object to the existing forms.
     if (this._rendered) {
       this.shadowRoot?.querySelectorAll("ha-form").forEach((form) => {
         form.hass = hass;
       });
+
       return;
     }
 
@@ -467,16 +649,17 @@ class RoomNavigationCardEditor extends HTMLElement {
 
   setConfig(config) {
     const nextConfig = structuredCloneSafe(config || {});
-    if (!Array.isArray(nextConfig.rooms)) nextConfig.rooms = [];
+
+    if (!Array.isArray(nextConfig.rooms)) {
+      nextConfig.rooms = [];
+    }
 
     const configHash = JSON.stringify(nextConfig);
-    const isEchoOfOwnChange = this._emittedConfigHashes.has(configHash);
+    const isEchoOfOwnChange =
+      this._emittedConfigHashes.has(configHash);
 
     this._config = nextConfig;
 
-    // Home Assistant normally sends our own `config-changed` event straight
-    // back through setConfig(). The form already contains that value, so a full
-    // re-render here would only destroy focus and reset the scroll position.
     if (isEchoOfOwnChange && this._rendered) {
       this._emittedConfigHashes.delete(configHash);
       return;
@@ -491,9 +674,11 @@ class RoomNavigationCardEditor extends HTMLElement {
     const configHash = JSON.stringify(config);
 
     this._emittedConfigHashes.add(configHash);
-    // Keep the set bounded in case Home Assistant coalesces some updates.
+
     while (this._emittedConfigHashes.size > 25) {
-      this._emittedConfigHashes.delete(this._emittedConfigHashes.values().next().value);
+      this._emittedConfigHashes.delete(
+        this._emittedConfigHashes.values().next().value
+      );
     }
 
     this.dispatchEvent(
@@ -508,7 +693,12 @@ class RoomNavigationCardEditor extends HTMLElement {
   _captureOpenState() {
     if (!this._rendered || !this.shadowRoot) return;
 
-    const detailsElements = [...this.shadowRoot.querySelectorAll(".room details[data-room-index]")];
+    const detailsElements = [
+      ...this.shadowRoot.querySelectorAll(
+        ".room details[data-room-index]"
+      ),
+    ];
+
     if (!detailsElements.length) return;
 
     this._openRoomIndexes = new Set(
@@ -517,20 +707,43 @@ class RoomNavigationCardEditor extends HTMLElement {
         .map((details) => Number(details.dataset.roomIndex))
         .filter(Number.isInteger)
     );
+
     this._openStateInitialized = true;
   }
 
   _topSchema() {
     return [
-      { name: "title", selector: { text: {} } },
+      {
+        name: "title",
+        selector: { text: {} },
+      },
       {
         type: "grid",
         name: "",
         schema: [
-          { name: "columns", selector: { number: { min: 1, max: 6, step: 1, mode: "box" } } },
-          { name: "show_greeting", selector: { boolean: {} } },
-          { name: "show_title", selector: { boolean: {} } },
-          { name: "show_info", selector: { boolean: {} } },
+          {
+            name: "columns",
+            selector: {
+              number: {
+                min: 1,
+                max: 6,
+                step: 1,
+                mode: "box",
+              },
+            },
+          },
+          {
+            name: "show_greeting",
+            selector: { boolean: {} },
+          },
+          {
+            name: "show_title",
+            selector: { boolean: {} },
+          },
+          {
+            name: "show_info",
+            selector: { boolean: {} },
+          },
         ],
       },
     ];
@@ -542,33 +755,73 @@ class RoomNavigationCardEditor extends HTMLElement {
         type: "grid",
         name: "",
         schema: [
-          { name: "name", required: true, selector: { text: {} } },
-          { name: "icon", selector: { icon: {} } },
+          {
+            name: "name",
+            required: true,
+            selector: { text: {} },
+          },
+          {
+            name: "icon",
+            selector: { icon: {} },
+          },
         ],
       },
-      { name: "navigation_path", selector: { text: {} } },
+      {
+        name: "navigation_path",
+        selector: { text: {} },
+      },
       {
         name: "status_entities",
         selector: {
           entity: {
             multiple: true,
             reorder: true,
-            filter: [{ domain: "light" }, { domain: "switch" }, { domain: "input_boolean" }, { domain: "group" }],
+            filter: [
+              { domain: "light" },
+              { domain: "switch" },
+              { domain: "input_boolean" },
+              { domain: "group" },
+            ],
           },
         },
       },
-      { name: "climate_entity", selector: { entity: { filter: [{ domain: "climate" }] } } },
+      {
+        name: "climate_entity",
+        selector: {
+          entity: {
+            filter: [{ domain: "climate" }],
+          },
+        },
+      },
       {
         type: "grid",
         name: "",
         schema: [
           {
             name: "temperature_entity",
-            selector: { entity: { filter: [{ domain: "sensor", device_class: "temperature" }] } },
+            selector: {
+              entity: {
+                filter: [
+                  {
+                    domain: "sensor",
+                    device_class: "temperature",
+                  },
+                ],
+              },
+            },
           },
           {
             name: "humidity_entity",
-            selector: { entity: { filter: [{ domain: "sensor", device_class: "humidity" }] } },
+            selector: {
+              entity: {
+                filter: [
+                  {
+                    domain: "sensor",
+                    device_class: "humidity",
+                  },
+                ],
+              },
+            },
           },
         ],
       },
@@ -579,8 +832,14 @@ class RoomNavigationCardEditor extends HTMLElement {
             multiple: true,
             reorder: true,
             filter: [
-              { domain: "binary_sensor", device_class: "door" },
-              { domain: "binary_sensor", device_class: "opening" },
+              {
+                domain: "binary_sensor",
+                device_class: "door",
+              },
+              {
+                domain: "binary_sensor",
+                device_class: "opening",
+              },
             ],
           },
         },
@@ -592,8 +851,14 @@ class RoomNavigationCardEditor extends HTMLElement {
             multiple: true,
             reorder: true,
             filter: [
-              { domain: "binary_sensor", device_class: "window" },
-              { domain: "binary_sensor", device_class: "opening" },
+              {
+                domain: "binary_sensor",
+                device_class: "window",
+              },
+              {
+                domain: "binary_sensor",
+                device_class: "opening",
+              },
             ],
           },
         },
@@ -604,7 +869,11 @@ class RoomNavigationCardEditor extends HTMLElement {
           entity: {
             multiple: true,
             reorder: true,
-            filter: [{ domain: "binary_sensor" }, { domain: "switch" }, { domain: "input_boolean" }],
+            filter: [
+              { domain: "binary_sensor" },
+              { domain: "switch" },
+              { domain: "input_boolean" },
+            ],
           },
         },
       },
@@ -614,7 +883,11 @@ class RoomNavigationCardEditor extends HTMLElement {
           entity: {
             multiple: true,
             reorder: true,
-            filter: [{ domain: "binary_sensor" }, { domain: "switch" }, { domain: "input_boolean" }],
+            filter: [
+              { domain: "binary_sensor" },
+              { domain: "switch" },
+              { domain: "input_boolean" },
+            ],
           },
         },
       },
@@ -624,7 +897,12 @@ class RoomNavigationCardEditor extends HTMLElement {
           entity: {
             multiple: true,
             reorder: true,
-            filter: [{ domain: "binary_sensor" }, { domain: "switch" }, { domain: "fan" }, { domain: "input_boolean" }],
+            filter: [
+              { domain: "binary_sensor" },
+              { domain: "switch" },
+              { domain: "fan" },
+              { domain: "input_boolean" },
+            ],
           },
         },
       },
@@ -635,8 +913,14 @@ class RoomNavigationCardEditor extends HTMLElement {
             multiple: true,
             reorder: true,
             filter: [
-              { domain: "binary_sensor", device_class: "motion" },
-              { domain: "binary_sensor", device_class: "occupancy" },
+              {
+                domain: "binary_sensor",
+                device_class: "motion",
+              },
+              {
+                domain: "binary_sensor",
+                device_class: "occupancy",
+              },
               { domain: "input_boolean" },
             ],
           },
@@ -651,7 +935,8 @@ class RoomNavigationCardEditor extends HTMLElement {
       columns: "Spalten",
       show_greeting: "Begrüßung anzeigen",
       show_title: "Überschrift anzeigen",
-      show_info: "Informationszeile anzeigen (Temperatur / Status)",
+      show_info:
+        "Informationszeile anzeigen (Temperatur / Status)",
       name: "Raumname",
       icon: "Icon",
       navigation_path: "Navigationspfad",
@@ -662,27 +947,41 @@ class RoomNavigationCardEditor extends HTMLElement {
       door_entities: "Türkontakte",
       window_entities: "Fensterkontakte",
       heating_entities: "Heizungsanforderung",
-      electric_heating_entities: "E-Heizung / elektrische Heizungsanforderung",
+      electric_heating_entities:
+        "E-Heizung / elektrische Heizungsanforderung",
       fan_entities: "Lüfter / Heizlüfter",
       motion_entities: "Bewegung / Belegung",
     };
+
     return labels[schema.name] || schema.name;
   }
 
   _helper(schema) {
     const helpers = {
-      status_entities: "Sobald mindestens eine dieser Entitäten aktiv ist, wird das Haupticon gelb statt blau.",
-      climate_entity: "Zeigt automatisch Ist- und Solltemperatur als 'Ist → Soll'.",
-      temperature_entity: "Alternative für Räume ohne Climate-Entität, z. B. Balkon.",
-      humidity_entity: "Wird zusammen mit dem Temperatursensor als zweite Information angezeigt.",
-      door_entities: "Bei offenem Kontakt erscheint oben links ein Türsymbol.",
-      window_entities: "Bei offenem Kontakt erscheint oben links ein Fenstersymbol.",
-      heating_entities: "Wenn mindestens eine Entität aktiv ist, erscheint oben rechts ein rotes Heizungs-Icon (mdi:heat-wave).",
-      electric_heating_entities: "Wenn mindestens eine Entität aktiv ist, erscheint oben rechts ein rotes Blitz-Icon (mdi:flash).",
-      fan_entities: "Wenn mindestens eine Entität aktiv ist, erscheint oben rechts ein rotes Lüfter-Icon (mdi:fan).",
-      motion_entities: "Wenn mindestens eine Entität aktiv ist, erscheint oben rechts ein rotes Bewegungs-Icon (mdi:run).",
-      navigation_path: "Zum Beispiel: schlafzimmer oder /lovelace/schlafzimmer",
+      status_entities:
+        "Sobald mindestens eine dieser Entitäten aktiv ist, wird das Haupticon gelb statt blau.",
+      climate_entity:
+        "Zeigt automatisch Ist- und Solltemperatur als 'Ist → Soll'.",
+      temperature_entity:
+        "Alternative für Räume ohne Climate-Entität, z. B. Balkon.",
+      humidity_entity:
+        "Wird zusammen mit dem Temperatursensor als zweite Information angezeigt.",
+      door_entities:
+        "Bei offenem Kontakt erscheint oben links ein Türsymbol.",
+      window_entities:
+        "Bei offenem Kontakt erscheint oben links ein Fenstersymbol.",
+      heating_entities:
+        "Wenn mindestens eine Entität aktiv ist, erscheint oben rechts ein rotes Heizungs-Icon.",
+      electric_heating_entities:
+        "Wenn mindestens eine Entität aktiv ist, erscheint oben rechts ein rotes Blitz-Icon.",
+      fan_entities:
+        "Wenn mindestens eine Entität aktiv ist, erscheint oben rechts ein rotes Lüfter-Icon.",
+      motion_entities:
+        "Wenn mindestens eine Entität aktiv ist, erscheint oben rechts ein rotes Bewegungs-Icon.",
+      navigation_path:
+        "Zum Beispiel: schlafzimmer oder /lovelace/schlafzimmer",
     };
+
     return helpers[schema.name];
   }
 
@@ -690,6 +989,7 @@ class RoomNavigationCardEditor extends HTMLElement {
     this._captureOpenState();
 
     const newIndex = (this._config.rooms || []).length;
+
     this._config.rooms = [
       ...(this._config.rooms || []),
       {
@@ -709,7 +1009,6 @@ class RoomNavigationCardEditor extends HTMLElement {
       },
     ];
 
-    // Open the newly added room without collapsing rooms the user already opened.
     this._openRoomIndexes.add(newIndex);
     this._openStateInitialized = true;
 
@@ -720,13 +1019,22 @@ class RoomNavigationCardEditor extends HTMLElement {
   _removeRoom(index) {
     this._captureOpenState();
 
-    this._config.rooms = this._config.rooms.filter((_, roomIndex) => roomIndex !== index);
+    this._config.rooms = this._config.rooms.filter(
+      (_, roomIndex) => roomIndex !== index
+    );
 
     const adjustedOpenIndexes = new Set();
+
     this._openRoomIndexes.forEach((openIndex) => {
-      if (openIndex < index) adjustedOpenIndexes.add(openIndex);
-      if (openIndex > index) adjustedOpenIndexes.add(openIndex - 1);
+      if (openIndex < index) {
+        adjustedOpenIndexes.add(openIndex);
+      }
+
+      if (openIndex > index) {
+        adjustedOpenIndexes.add(openIndex - 1);
+      }
     });
+
     this._openRoomIndexes = adjustedOpenIndexes;
 
     this._fireConfigChanged();
@@ -735,20 +1043,39 @@ class RoomNavigationCardEditor extends HTMLElement {
 
   _moveRoom(index, direction) {
     const targetIndex = index + direction;
-    if (targetIndex < 0 || targetIndex >= this._config.rooms.length) return;
+
+    if (
+      targetIndex < 0 ||
+      targetIndex >= this._config.rooms.length
+    ) {
+      return;
+    }
 
     this._captureOpenState();
 
     const rooms = [...this._config.rooms];
-    [rooms[index], rooms[targetIndex]] = [rooms[targetIndex], rooms[index]];
+
+    [rooms[index], rooms[targetIndex]] = [
+      rooms[targetIndex],
+      rooms[index],
+    ];
+
     this._config.rooms = rooms;
 
     const sourceWasOpen = this._openRoomIndexes.has(index);
-    const targetWasOpen = this._openRoomIndexes.has(targetIndex);
+    const targetWasOpen =
+      this._openRoomIndexes.has(targetIndex);
+
     this._openRoomIndexes.delete(index);
     this._openRoomIndexes.delete(targetIndex);
-    if (sourceWasOpen) this._openRoomIndexes.add(targetIndex);
-    if (targetWasOpen) this._openRoomIndexes.add(index);
+
+    if (sourceWasOpen) {
+      this._openRoomIndexes.add(targetIndex);
+    }
+
+    if (targetWasOpen) {
+      this._openRoomIndexes.add(index);
+    }
 
     this._fireConfigChanged();
     this._render();
@@ -759,173 +1086,387 @@ class RoomNavigationCardEditor extends HTMLElement {
 
     this.shadowRoot.innerHTML = `
       <style>
-        :host { display: block; }
-        .editor { display: flex; flex-direction: column; gap: 16px; }
-        .section-title { font-size: 1.15rem; font-weight: 700; margin-top: 4px; }
+        :host {
+          display: block;
+        }
+
+        .editor {
+          display: flex;
+          flex-direction: column;
+          gap: 16px;
+        }
+
+        .section-title {
+          font-size: 1.15rem;
+          font-weight: 700;
+          margin-top: 4px;
+        }
+
         .room {
           border: 1px solid var(--divider-color);
           border-radius: 12px;
           overflow: hidden;
           background: var(--card-background-color);
         }
+
         details > summary {
           cursor: pointer;
           padding: 13px 14px;
+
           font-weight: 600;
+
           display: flex;
           align-items: center;
           gap: 8px;
+
           list-style: none;
         }
-        details > summary::-webkit-details-marker { display: none; }
-        .room-content { padding: 0 14px 14px; }
-        .room-actions { display: flex; justify-content: flex-end; gap: 8px; padding-top: 10px; }
+
+        details > summary::-webkit-details-marker {
+          display: none;
+        }
+
+        .room-content {
+          padding: 0 14px 14px;
+        }
+
+        .room-actions {
+          display: flex;
+          justify-content: flex-end;
+          gap: 8px;
+          padding-top: 10px;
+        }
+
         button {
           border: 1px solid var(--divider-color);
           background: var(--secondary-background-color);
           color: var(--primary-text-color);
+
           border-radius: 10px;
           min-height: 38px;
           padding: 0 12px;
+
           cursor: pointer;
           font: inherit;
         }
+
         button.primary {
           background: var(--primary-color);
           color: var(--text-primary-color, white);
           border-color: var(--primary-color);
         }
+
+        button:disabled {
+          opacity: 0.45;
+          cursor: default;
+        }
+
         .empty {
           color: var(--secondary-text-color);
           padding: 8px 0;
         }
       </style>
+
       <div class="editor">
         <div id="global-form"></div>
-        <div class="section-title">Räume</div>
+
+        <div class="section-title">Kacheln</div>
+
         <div id="rooms"></div>
-        <button class="primary" id="add-room" type="button">+ Raum hinzufügen</button>
+
+        <button
+          class="primary"
+          id="add-room"
+          type="button"
+        >
+          + Kachel hinzufügen
+        </button>
       </div>
     `;
 
-    const globalHost = this.shadowRoot.getElementById("global-form");
-    const globalForm = document.createElement("ha-form");
+    const globalHost =
+      this.shadowRoot.getElementById("global-form");
+
+    const globalForm =
+      document.createElement("ha-form");
+
     globalForm.hass = this._hass;
     globalForm.data = {
       title: this._config.title ?? "Räume",
       columns: this._config.columns ?? 3,
-      show_greeting: this._config.show_greeting ?? false,
+      show_greeting:
+        this._config.show_greeting ?? false,
       show_title: this._config.show_title ?? true,
       show_info: this._config.show_info ?? true,
     };
     globalForm.schema = this._topSchema();
-    globalForm.computeLabel = (schema) => this._label(schema);
-    globalForm.addEventListener("value-changed", (event) => {
-      const value = event.detail?.value || {};
-      this._config = { ...this._config, ...value };
-      this._fireConfigChanged();
-    });
+    globalForm.computeLabel = (schema) =>
+      this._label(schema);
+
+    globalForm.addEventListener(
+      "value-changed",
+      (event) => {
+        const value = event.detail?.value || {};
+
+        this._config = {
+          ...this._config,
+          ...value,
+        };
+
+        this._fireConfigChanged();
+      }
+    );
+
     globalHost.appendChild(globalForm);
 
-    const roomsHost = this.shadowRoot.getElementById("rooms");
+    const roomsHost =
+      this.shadowRoot.getElementById("rooms");
     const rooms = this._config.rooms || [];
 
     if (!this._openStateInitialized) {
-      this._openRoomIndexes = new Set(rooms.length ? [0] : []);
+      this._openRoomIndexes = new Set(
+        rooms.length ? [0] : []
+      );
       this._openStateInitialized = true;
     }
 
     if (!rooms.length) {
       const empty = document.createElement("div");
       empty.className = "empty";
-      empty.textContent = "Noch keine Räume konfiguriert.";
+      empty.textContent =
+        "Noch keine Kacheln konfiguriert.";
       roomsHost.appendChild(empty);
     }
 
     rooms.forEach((room, index) => {
       const wrapper = document.createElement("div");
       wrapper.className = "room";
+
       wrapper.innerHTML = `
-        <details data-room-index="${index}" ${this._openRoomIndexes.has(index) ? "open" : ""}>
+        <details
+          data-room-index="${index}"
+          ${
+            this._openRoomIndexes.has(index)
+              ? "open"
+              : ""
+          }
+        >
           <summary>
-            <ha-icon class="summary-icon" icon="${escapeHtml(room.icon || "mdi:home-outline")}"></ha-icon>
-            <span class="summary-name">${escapeHtml(room.name || `Raum ${index + 1}`)}</span>
+            <ha-icon
+              class="summary-icon"
+              icon="${escapeHtml(
+                room.icon || "mdi:home-outline"
+              )}"
+            ></ha-icon>
+
+            <span class="summary-name">
+              ${escapeHtml(
+                room.name || `Kachel ${index + 1}`
+              )}
+            </span>
           </summary>
+
           <div class="room-content">
             <div class="form-host"></div>
+
             <div class="room-actions">
-              <button type="button" data-action="up" ${index === 0 ? "disabled" : ""}>↑</button>
-              <button type="button" data-action="down" ${index === rooms.length - 1 ? "disabled" : ""}>↓</button>
-              <button type="button" data-action="remove">Entfernen</button>
+              <button
+                type="button"
+                data-action="up"
+                ${index === 0 ? "disabled" : ""}
+              >
+                ↑
+              </button>
+
+              <button
+                type="button"
+                data-action="down"
+                ${
+                  index === rooms.length - 1
+                    ? "disabled"
+                    : ""
+                }
+              >
+                ↓
+              </button>
+
+              <button
+                type="button"
+                data-action="remove"
+              >
+                Entfernen
+              </button>
             </div>
           </div>
         </details>
       `;
 
-      const form = document.createElement("ha-form");
+      const form =
+        document.createElement("ha-form");
+
       form.hass = this._hass;
       form.data = {
         name: room.name ?? "",
         icon: room.icon ?? "mdi:home-outline",
-        navigation_path: room.navigation_path ?? "",
-        status_entities: normalizeEntityList(room.status_entities || room.status_entity),
-        climate_entity: room.climate_entity ?? "",
-        temperature_entity: room.temperature_entity ?? "",
-        humidity_entity: room.humidity_entity ?? "",
-        door_entities: normalizeEntityList(room.door_entities || room.door_entity),
-        window_entities: normalizeEntityList(room.window_entities || room.window_entity),
-        heating_entities: normalizeEntityList(room.heating_entities || room.heating_entity),
-        electric_heating_entities: normalizeEntityList(room.electric_heating_entities || room.electric_heating_entity),
-        fan_entities: normalizeEntityList(room.fan_entities || room.fan_entity),
-        motion_entities: normalizeEntityList(room.motion_entities || room.motion_entity),
+        navigation_path:
+          room.navigation_path ?? "",
+        status_entities: normalizeEntityList(
+          room.status_entities ||
+            room.status_entity
+        ),
+        climate_entity:
+          room.climate_entity ?? "",
+        temperature_entity:
+          room.temperature_entity ?? "",
+        humidity_entity:
+          room.humidity_entity ?? "",
+        door_entities: normalizeEntityList(
+          room.door_entities ||
+            room.door_entity
+        ),
+        window_entities: normalizeEntityList(
+          room.window_entities ||
+            room.window_entity
+        ),
+        heating_entities: normalizeEntityList(
+          room.heating_entities ||
+            room.heating_entity
+        ),
+        electric_heating_entities:
+          normalizeEntityList(
+            room.electric_heating_entities ||
+              room.electric_heating_entity
+          ),
+        fan_entities: normalizeEntityList(
+          room.fan_entities ||
+            room.fan_entity
+        ),
+        motion_entities: normalizeEntityList(
+          room.motion_entities ||
+            room.motion_entity
+        ),
       };
+
       form.schema = this._roomSchema();
-      form.computeLabel = (schema) => this._label(schema);
-      form.computeHelper = (schema) => this._helper(schema);
-      form.addEventListener("value-changed", (event) => {
-        const changedValues = event.detail?.value || {};
-        const newRooms = [...this._config.rooms];
-        newRooms[index] = { ...newRooms[index], ...changedValues };
-        this._config.rooms = newRooms;
+      form.computeLabel = (schema) =>
+        this._label(schema);
+      form.computeHelper = (schema) =>
+        this._helper(schema);
 
-        // Keep the summary in sync without rebuilding the editor.
-        if (Object.prototype.hasOwnProperty.call(changedValues, "name")) {
-          const summaryName = wrapper.querySelector(".summary-name");
-          if (summaryName) summaryName.textContent = changedValues.name || `Raum ${index + 1}`;
+      form.addEventListener(
+        "value-changed",
+        (event) => {
+          const changedValues =
+            event.detail?.value || {};
+
+          const newRooms = [
+            ...this._config.rooms,
+          ];
+
+          newRooms[index] = {
+            ...newRooms[index],
+            ...changedValues,
+          };
+
+          this._config.rooms = newRooms;
+
+          if (
+            Object.prototype.hasOwnProperty.call(
+              changedValues,
+              "name"
+            )
+          ) {
+            const summaryName =
+              wrapper.querySelector(
+                ".summary-name"
+              );
+
+            if (summaryName) {
+              summaryName.textContent =
+                changedValues.name ||
+                `Kachel ${index + 1}`;
+            }
+          }
+
+          if (
+            Object.prototype.hasOwnProperty.call(
+              changedValues,
+              "icon"
+            )
+          ) {
+            const summaryIcon =
+              wrapper.querySelector(
+                ".summary-icon"
+              );
+
+            if (summaryIcon) {
+              summaryIcon.setAttribute(
+                "icon",
+                changedValues.icon ||
+                  "mdi:home-outline"
+              );
+            }
+          }
+
+          this._fireConfigChanged();
         }
-        if (Object.prototype.hasOwnProperty.call(changedValues, "icon")) {
-          const summaryIcon = wrapper.querySelector(".summary-icon");
-          if (summaryIcon) summaryIcon.setAttribute("icon", changedValues.icon || "mdi:home-outline");
-        }
+      );
 
-        this._fireConfigChanged();
-      });
+      const details =
+        wrapper.querySelector("details");
 
-      const details = wrapper.querySelector("details");
       details.addEventListener("toggle", () => {
         if (details.open) {
           this._openRoomIndexes.add(index);
         } else {
           this._openRoomIndexes.delete(index);
         }
+
         this._openStateInitialized = true;
       });
 
-      wrapper.querySelector(".form-host").appendChild(form);
-      wrapper.querySelector('[data-action="up"]').addEventListener("click", () => this._moveRoom(index, -1));
-      wrapper.querySelector('[data-action="down"]').addEventListener("click", () => this._moveRoom(index, 1));
-      wrapper.querySelector('[data-action="remove"]').addEventListener("click", () => this._removeRoom(index));
+      wrapper
+        .querySelector(".form-host")
+        .appendChild(form);
+
+      wrapper
+        .querySelector('[data-action="up"]')
+        .addEventListener("click", () =>
+          this._moveRoom(index, -1)
+        );
+
+      wrapper
+        .querySelector('[data-action="down"]')
+        .addEventListener("click", () =>
+          this._moveRoom(index, 1)
+        );
+
+      wrapper
+        .querySelector('[data-action="remove"]')
+        .addEventListener("click", () =>
+          this._removeRoom(index)
+        );
+
       roomsHost.appendChild(wrapper);
     });
 
-    this.shadowRoot.getElementById("add-room").addEventListener("click", () => this._addRoom());
+    this.shadowRoot
+      .getElementById("add-room")
+      .addEventListener("click", () =>
+        this._addRoom()
+      );
+
     this._rendered = true;
   }
 }
 
 function normalizeEntityList(value) {
   if (!value) return [];
-  if (Array.isArray(value)) return value.filter(Boolean);
+
+  if (Array.isArray(value)) {
+    return value.filter(Boolean);
+  }
+
   return [value].filter(Boolean);
 }
 
@@ -939,40 +1480,71 @@ function escapeHtml(value) {
 }
 
 function structuredCloneSafe(value) {
-  if (typeof structuredClone === "function") return structuredClone(value);
+  if (typeof structuredClone === "function") {
+    return structuredClone(value);
+  }
+
   return JSON.parse(JSON.stringify(value));
 }
 
 async function ensureEditorDependencies() {
-  if (customElements.get("ha-form")) return;
-  const entitiesCard = customElements.get("hui-entities-card");
+  if (customElements.get("ha-form")) {
+    return;
+  }
+
+  const entitiesCard =
+    customElements.get("hui-entities-card");
+
   if (entitiesCard?.getConfigElement) {
     await entitiesCard.getConfigElement();
   }
+
   if (customElements.whenDefined) {
     try {
       await customElements.whenDefined("ha-form");
     } catch (_error) {
-      // Home Assistant will surface an editor error if ha-form is unavailable.
+      // Home Assistant will show an editor error if ha-form is unavailable.
     }
   }
 }
 
 if (!customElements.get("room-navigation-card")) {
-  customElements.define("room-navigation-card", RoomNavigationCard);
+  customElements.define(
+    "room-navigation-card",
+    RoomNavigationCard
+  );
 }
-if (!customElements.get("room-navigation-card-editor")) {
-  customElements.define("room-navigation-card-editor", RoomNavigationCardEditor);
+
+if (
+  !customElements.get(
+    "room-navigation-card-editor"
+  )
+) {
+  customElements.define(
+    "room-navigation-card-editor",
+    RoomNavigationCardEditor
+  );
 }
 
 window.customCards = window.customCards || [];
-if (!window.customCards.some((card) => card.type === "room-navigation-card")) {
+
+if (
+  !window.customCards.some(
+    (card) =>
+      card.type === "room-navigation-card"
+  )
+) {
   window.customCards.push({
     type: "room-navigation-card",
     name: "Room Navigation Card",
-    description: "Wiederverwendbare Kachelübersicht mit Navigation, Statusfarbe, Klima sowie Fenster-, Tür-, Heizungs-, Lüfter- und Bewegungsstatus.",
+    description:
+      "Wiederverwendbare Kachelübersicht mit Navigation, Statusfarbe, Klima sowie Fenster-, Tür-, Heizungs-, Lüfter- und Bewegungsstatus.",
     preview: true,
   });
 }
 
-console.info(`%c ROOM-NAVIGATION-CARD %c v${ROOM_NAV_CARD_VERSION} `, "color:white;background:#03a9f4;font-weight:bold", "color:#03a9f4;background:white;font-weight:bold");
+console.info(
+  `%c ROOM-NAVIGATION-CARD %c v${ROOM_NAV_CARD_VERSION} `,
+  "color:white;background:#03a9f4;font-weight:bold",
+  "color:#03a9f4;background:white;font-weight:bold"
+);
