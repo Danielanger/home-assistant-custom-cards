@@ -1,4 +1,4 @@
-const ROOM_DETAIL_CARD_VERSION = "0.1.0";
+const ROOM_DETAIL_CARD_VERSION = "0.2.0";
 
 const clone = (value) => {
   if (typeof structuredClone === "function") {
@@ -27,16 +27,27 @@ class RoomDetailCard extends HTMLElement {
     return {
       type: "custom:room-detail-card",
       sensors_title: "Sensoren",
-      heating_title: "Heizung",
+      sensors_columns: 3,
       lights_title: "Licht",
+      switches_title: "Schalter",
+      covers_title: "Beschattung",
+      heating_title: "Heizung",
       media_title: "Medien",
+      misc_title: "Sonstiges",
+      misc_columns: 3,
+      solar_title: "Solar",
+      solar_columns: 3,
       show_back_button: true,
       back_path: "",
       back_icon: "mdi:arrow-left",
       sensors: [],
-      climates: [],
       lights: [],
+      switches: [],
+      covers: [],
+      climates: [],
       media_players: [],
+      misc: [],
+      solar: [],
     };
   }
 
@@ -52,20 +63,31 @@ class RoomDetailCard extends HTMLElement {
 
     this._config = {
       sensors_title: "Sensoren",
-      heating_title: "Heizung",
+      sensors_columns: 3,
       lights_title: "Licht",
+      switches_title: "Schalter",
+      covers_title: "Beschattung",
+      heating_title: "Heizung",
       media_title: "Medien",
+      misc_title: "Sonstiges",
+      misc_columns: 3,
+      solar_title: "Solar",
+      solar_columns: 3,
       show_back_button: true,
       back_path: "",
       back_icon: "mdi:arrow-left",
       sensors: [],
-      climates: [],
       lights: [],
+      switches: [],
+      covers: [],
+      climates: [],
       media_players: [],
+      misc: [],
+      solar: [],
       ...clone(config),
     };
 
-    for (const key of ["sensors", "climates", "lights", "media_players"]) {
+    for (const key of ["sensors", "lights", "switches", "covers", "climates", "media_players", "misc", "solar"]) {
       if (!Array.isArray(this._config[key])) this._config[key] = [];
     }
 
@@ -76,9 +98,13 @@ class RoomDetailCard extends HTMLElement {
   getCardSize() {
     const itemCount =
       this._config.sensors.length +
-      this._config.climates.length +
       this._config.lights.length +
-      this._config.media_players.length;
+      this._config.switches.length +
+      this._config.covers.length +
+      this._config.climates.length +
+      this._config.media_players.length +
+      this._config.misc.length +
+      this._config.solar.length;
     return Math.max(3, itemCount + 4);
   }
 
@@ -223,6 +249,7 @@ class RoomDetailCard extends HTMLElement {
     cards.push(this._sectionTitle(this._config.sensors_title || "Sensoren"));
     cards.push({
       type: "glance",
+      columns: Math.max(1, Number(this._config.sensors_columns) || 3),
       show_icon: true,
       show_name: true,
       show_state: true,
@@ -232,6 +259,67 @@ class RoomDetailCard extends HTMLElement {
         ...(item.icon ? { icon: item.icon } : {}),
       })),
     });
+  }
+
+
+  _buildGlanceSection(cards, items, title, columns = 3) {
+    const entries = items.filter((item) => item?.entity);
+    if (!entries.length) return;
+
+    cards.push(this._sectionTitle(title));
+    cards.push({
+      type: "glance",
+      columns: Math.max(1, Number(columns) || 3),
+      show_icon: true,
+      show_name: true,
+      show_state: true,
+      entities: entries.map((item) => ({
+        entity: item.entity,
+        ...(item.name ? { name: item.name } : {}),
+        ...(item.icon ? { icon: item.icon } : {}),
+      })),
+    });
+  }
+
+  _buildSwitchSection(cards) {
+    const switches = this._config.switches.filter((item) => item?.entity);
+    if (!switches.length) return;
+
+    cards.push(this._sectionTitle(this._config.switches_title || "Schalter"));
+
+    for (const item of switches) {
+      cards.push({
+        type: "custom:mushroom-entity-card",
+        entity: item.entity,
+        ...(item.name ? { name: item.name } : {}),
+        ...(item.icon ? { icon: item.icon } : {}),
+        tap_action: { action: item.tap_action || "toggle" },
+        hold_action: { action: "more-info" },
+        double_tap_action: { action: "none" },
+      });
+    }
+  }
+
+  _buildCoverSection(cards) {
+    const covers = this._config.covers.filter((item) => item?.entity);
+    if (!covers.length) return;
+
+    cards.push(this._sectionTitle(this._config.covers_title || "Beschattung"));
+
+    for (const item of covers) {
+      cards.push({
+        type: "custom:mushroom-cover-card",
+        entity: item.entity,
+        ...(item.name ? { name: item.name } : {}),
+        ...(item.icon ? { icon: item.icon } : {}),
+        show_position_control: item.show_position_control !== false,
+        show_buttons_control: item.show_buttons_control !== false,
+        show_tilt_position_control: item.show_tilt_position_control === true,
+        tap_action: { action: "more-info" },
+        hold_action: { action: "more-info" },
+        double_tap_action: { action: "none" },
+      });
+    }
   }
 
   _buildClimateSection(cards) {
@@ -371,9 +459,23 @@ class RoomDetailCard extends HTMLElement {
     const cards = [];
 
     this._buildSensorSection(cards);
-    this._buildClimateSection(cards);
     this._buildLightSection(cards);
+    this._buildSwitchSection(cards);
+    this._buildCoverSection(cards);
+    this._buildClimateSection(cards);
     this._buildMediaSection(cards);
+    this._buildGlanceSection(
+      cards,
+      this._config.misc,
+      this._config.misc_title || "Sonstiges",
+      this._config.misc_columns
+    );
+    this._buildGlanceSection(
+      cards,
+      this._config.solar,
+      this._config.solar_title || "Solar",
+      this._config.solar_columns
+    );
 
     return {
       type: "custom:stack-in-card",
@@ -390,7 +492,7 @@ window.customCards.push({
   type: "room-detail-card",
   name: "Room Detail Card",
   description:
-    "Konfigurierbare Raumdetailseite mit Sensoren, Heizung, Licht, Medien und festem Zurück-Button.",
+    "Konfigurierbare Raumdetailseite mit Sensoren, Licht, Schaltern, Beschattung, Heizung, Medien, Sonstigem, Solar und festem Zurück-Button.",
   preview: true,
   documentationURL: "",
 });
@@ -426,7 +528,7 @@ class RoomDetailCardEditor extends HTMLElement {
       ...clone(config || {}),
     };
 
-    for (const key of ["sensors", "climates", "lights", "media_players"]) {
+    for (const key of ["sensors", "lights", "switches", "covers", "climates", "media_players", "misc", "solar"]) {
       if (!Array.isArray(nextConfig[key])) nextConfig[key] = [];
     }
 
@@ -464,9 +566,16 @@ class RoomDetailCardEditor extends HTMLElement {
   _labels(schema) {
     const labels = {
       sensors_title: "Überschrift Sensoren",
-      heating_title: "Überschrift Heizung",
+      sensors_columns: "Spalten bei Sensoren",
       lights_title: "Überschrift Licht",
+      switches_title: "Überschrift Schalter",
+      covers_title: "Überschrift Beschattung",
+      heating_title: "Überschrift Heizung",
       media_title: "Überschrift Medien",
+      misc_title: "Überschrift Sonstiges",
+      misc_columns: "Spalten bei Sonstiges",
+      solar_title: "Überschrift Solar",
+      solar_columns: "Spalten bei Solar",
       show_back_button: "Floating Zurück-Button anzeigen",
       back_path: "Fester Zurück-Navigationspfad (leer = Browser zurück)",
       back_icon: "Icon des Zurück-Buttons",
@@ -483,6 +592,9 @@ class RoomDetailCardEditor extends HTMLElement {
       condition_state: "... diesen Zustand hat",
       show_volume_level: "Lautstärke anzeigen",
       use_media_info: "Medieninformationen anzeigen",
+      show_position_control: "Positionsregler anzeigen",
+      show_buttons_control: "Auf / Stop / Ab anzeigen",
+      show_tilt_position_control: "Lamellenposition anzeigen",
     };
     return labels[schema.name] || schema.name;
   }
@@ -508,9 +620,16 @@ class RoomDetailCardEditor extends HTMLElement {
   _globalSchema() {
     return [
       { name: "sensors_title", selector: { text: {} } },
-      { name: "heating_title", selector: { text: {} } },
+      { name: "sensors_columns", selector: { number: { min: 1, max: 8, step: 1, mode: "box" } } },
       { name: "lights_title", selector: { text: {} } },
+      { name: "switches_title", selector: { text: {} } },
+      { name: "covers_title", selector: { text: {} } },
+      { name: "heating_title", selector: { text: {} } },
       { name: "media_title", selector: { text: {} } },
+      { name: "misc_title", selector: { text: {} } },
+      { name: "misc_columns", selector: { number: { min: 1, max: 8, step: 1, mode: "box" } } },
+      { name: "solar_title", selector: { text: {} } },
+      { name: "solar_columns", selector: { number: { min: 1, max: 8, step: 1, mode: "box" } } },
       { name: "show_back_button", selector: { boolean: {} } },
       { name: "back_path", selector: { text: {} } },
       { name: "back_icon", selector: { icon: {} } },
@@ -519,6 +638,34 @@ class RoomDetailCardEditor extends HTMLElement {
 
   _schemaFor(key) {
     if (key === "sensors") {
+      return [
+        { name: "entity", selector: { entity: {} } },
+        { name: "name", selector: { text: {} } },
+        { name: "icon", selector: { icon: {} } },
+      ];
+    }
+
+
+    if (key === "switches") {
+      return [
+        { name: "entity", selector: { entity: {} } },
+        { name: "name", selector: { text: {} } },
+        { name: "icon", selector: { icon: {} } },
+      ];
+    }
+
+    if (key === "covers") {
+      return [
+        { name: "entity", selector: { entity: {} } },
+        { name: "name", selector: { text: {} } },
+        { name: "icon", selector: { icon: {} } },
+        { name: "show_position_control", selector: { boolean: {} } },
+        { name: "show_buttons_control", selector: { boolean: {} } },
+        { name: "show_tilt_position_control", selector: { boolean: {} } },
+      ];
+    }
+
+    if (key === "misc" || key === "solar") {
       return [
         { name: "entity", selector: { entity: {} } },
         { name: "name", selector: { text: {} } },
@@ -566,6 +713,23 @@ class RoomDetailCardEditor extends HTMLElement {
     if (key === "sensors") {
       return { entity: "", name: "", icon: "" };
     }
+
+    if (key === "switches") {
+      return { entity: "", name: "", icon: "" };
+    }
+    if (key === "covers") {
+      return {
+        entity: "",
+        name: "",
+        icon: "",
+        show_position_control: true,
+        show_buttons_control: true,
+        show_tilt_position_control: false,
+      };
+    }
+    if (key === "misc" || key === "solar") {
+      return { entity: "", name: "", icon: "" };
+    }
     if (key === "climates") {
       return {
         entity: "",
@@ -602,9 +766,13 @@ class RoomDetailCardEditor extends HTMLElement {
   _collectionLabel(key) {
     return {
       sensors: "Sensoren",
+      lights: "Licht",
+      switches: "Schalter",
+      covers: "Beschattung",
       climates: "Heizungen / Thermostate",
-      lights: "Lichter / Schalter",
       media_players: "Medien",
+      misc: "Sonstiges",
+      solar: "Solar",
     }[key] || key;
   }
 
@@ -761,7 +929,7 @@ class RoomDetailCardEditor extends HTMLElement {
           <div id="global-form"></div>
         </div>
 
-        ${["sensors", "climates", "lights", "media_players"]
+        ${["sensors", "lights", "switches", "covers", "climates", "media_players", "misc", "solar"]
           .map(
             (key) => `
               <div class="block" data-collection="${key}">
@@ -782,9 +950,16 @@ class RoomDetailCardEditor extends HTMLElement {
     globalForm.hass = this._hass;
     globalForm.data = {
       sensors_title: this._config.sensors_title,
-      heating_title: this._config.heating_title,
+      sensors_columns: this._config.sensors_columns,
       lights_title: this._config.lights_title,
+      switches_title: this._config.switches_title,
+      covers_title: this._config.covers_title,
+      heating_title: this._config.heating_title,
       media_title: this._config.media_title,
+      misc_title: this._config.misc_title,
+      misc_columns: this._config.misc_columns,
+      solar_title: this._config.solar_title,
+      solar_columns: this._config.solar_columns,
       show_back_button: this._config.show_back_button,
       back_path: this._config.back_path,
       back_icon: this._config.back_icon,
@@ -800,7 +975,7 @@ class RoomDetailCardEditor extends HTMLElement {
     });
     globalHost.appendChild(globalForm);
 
-    for (const key of ["sensors", "climates", "lights", "media_players"]) {
+    for (const key of ["sensors", "lights", "switches", "covers", "climates", "media_players", "misc", "solar"]) {
       const host = this.shadowRoot.getElementById(`items-${key}`);
       const list = this._config[key];
 
