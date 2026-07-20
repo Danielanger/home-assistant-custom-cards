@@ -1,4 +1,4 @@
-const ROOM_DETAIL_CARD_VERSION = "0.2.2";
+const ROOM_DETAIL_CARD_VERSION = "0.2.3";
 
 const clone = (value) => {
   if (typeof structuredClone === "function") {
@@ -122,6 +122,8 @@ class RoomDetailCard extends HTMLElement {
         #content {
           display: block;
           width: 100%;
+          box-sizing: border-box;
+          padding-bottom: 96px;
         }
 
         .back-button {
