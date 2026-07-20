@@ -5,7 +5,7 @@
  * Card type: custom:room-navigation-card
  */
 
-const ROOM_NAV_CARD_VERSION = "0.2.4";
+const ROOM_NAV_CARD_VERSION = "0.2.5";
 const ACTIVE_STATES = new Set(["on", "open", "opening", "unlocked", "home", "playing"]);
 
 class RoomNavigationCard extends HTMLElement {
@@ -222,7 +222,7 @@ class RoomNavigationCard extends HTMLElement {
       <style>
         :host {
           display: block;
-          --room-nav-active: var(--warning-color, rgb(255, 193, 7));
+          --room-nav-active: rgb(255, 193, 7);
           --room-nav-inactive: rgb(33, 150, 243);
           --room-nav-card-bg: var(--ha-card-background, var(--card-background-color));
         }
@@ -310,7 +310,7 @@ class RoomNavigationCard extends HTMLElement {
 
         .active .icon-cell {
           color: var(--room-nav-active);
-          background: rgba(255, 193, 7, 0.20);
+          background: rgba(255, 193, 7, 0.2);
         }
 
         .icon-cell ha-icon {
