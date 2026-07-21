@@ -540,29 +540,27 @@ class RoomNavigationCard extends HTMLElement {
           .room-tile:hover {
             z-index: 50;
 
-            /* Deliberately strong lift so the hover is clearly visible. */
-            transform: translateY(-6px) scale(1.05);
+            transform: translateY(-3px) scale(1.02);
 
             box-shadow:
-              0 24px 52px rgba(0, 0, 0, 0.42),
-              0 10px 24px rgba(0, 0, 0, 0.28),
-              0 0 0 1px rgba(255, 255, 255, 0.10);
+              0 8px 20px rgba(0, 0, 0, 0.18),
+              0 4px 10px rgba(0, 0, 0, 0.12);
 
-            filter: brightness(1.08);
+            filter: brightness(1.04);
           }
 
           .room-tile:hover .icon-cell {
             box-shadow:
-              0 8px 20px rgba(0, 0, 0, 0.24);
+              0 4px 12px rgba(0, 0, 0, 0.16);
             /* transform is applied dynamically via JS for 3D tilt */
           }
         }
 
         .room-tile:active {
-          transform: translateY(-3px) scale(0.985);
+          transform: translateY(-1px) scale(0.99);
           box-shadow:
-            0 10px 22px rgba(0, 0, 0, 0.28),
-            0 3px 8px rgba(0, 0, 0, 0.18);
+            0 4px 10px rgba(0, 0, 0, 0.16),
+            0 2px 4px rgba(0, 0, 0, 0.10);
           transition-duration: 60ms;
         }
 
