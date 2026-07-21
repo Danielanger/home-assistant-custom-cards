@@ -7,7 +7,7 @@
  * Card type: custom:home-status-card
  */
 
-const HOME_STATUS_CARD_VERSION = "1.0.0";
+const HOME_STATUS_CARD_VERSION = "1.0.1";
 
 class HomeStatusCard extends HTMLElement {
   constructor() {
