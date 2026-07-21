@@ -1,4 +1,4 @@
-const ROOM_DETAIL_CARD_VERSION = "0.2.6";
+const ROOM_DETAIL_CARD_VERSION = "0.2.7";
 
 const clone = (value) => {
   if (typeof structuredClone === "function") {
@@ -437,6 +437,10 @@ class RoomDetailCard extends HTMLElement {
             primary_info: "none",
             secondary_info: "none",
             use_light_color: false,
+            show_brightness_control: false,
+            show_color_temp_control: false,
+            show_color_control: false,
+            collapsible_controls: false,
             tap_action: { action: "toggle" },
             hold_action: { action: "none" },
             double_tap_action: { action: "none" },
@@ -460,8 +464,10 @@ class RoomDetailCard extends HTMLElement {
             show_color_control: item.show_color_control !== false,
             show_brightness_control: item.show_brightness_control !== false,
             card_mod: {
-              style:
-                "ha-card { margin-left: calc(-100% + 55px); transition-property: none !important; }",
+              style: {
+                "mushroom-card$ .actions": "padding-left: 10px;",
+                ".": "ha-card { margin-left: calc(-100% + 55px); transition-property: none !important; }",
+              },
             },
           },
         ],
