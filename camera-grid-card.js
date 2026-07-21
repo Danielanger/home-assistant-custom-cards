@@ -58,11 +58,22 @@ class CameraGridCard extends HTMLElement {
   }
 
   _buildGridConfig() {
+    const cards = [];
+    for (const cam of this._config.cameras) {
+      const entry = this._buildEntry(cam);
+      if (entry) cards.push(entry);
+      // Overlays as separate grid items (they use translateY to overlay the previous card)
+      if (cam.overlays?.length > 0) {
+        for (const overlay of cam.overlays) {
+          cards.push(overlay);
+        }
+      }
+    }
     return {
       type: "grid",
       columns: this._config.columns || 2,
       square: this._config.square || false,
-      cards: this._config.cameras.map((cam) => this._buildEntry(cam)).filter(Boolean),
+      cards,
     };
   }
 
@@ -79,11 +90,6 @@ class CameraGridCard extends HTMLElement {
     }
 
     let card = this._buildSingle(cam);
-
-    // Wrap with overlays (photo/video markdown links)
-    if (cam.overlays?.length > 0) {
-      card = { type: "vertical-stack", cards: [card, ...cam.overlays] };
-    }
 
     // Wrap with conditions
     if (cam.conditions?.length > 0) {
@@ -110,8 +116,6 @@ class CameraGridCard extends HTMLElement {
           ...(cam.image ? { image: cam.image } : {}),
           ...(cam.tap_action ? { tap_action: cam.tap_action } : {}),
           ...(cam.hold_action ? { hold_action: cam.hold_action } : {}),
-          // Force 16:9 via card_mod
-          card_mod: { style: "ha-card { aspect-ratio: 16/9; overflow: hidden; } img, video { object-fit: cover; width: 100%; height: 100%; }" },
         };
 
       case "picture-elements":
