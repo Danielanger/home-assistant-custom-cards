@@ -1,4 +1,4 @@
-const ROOM_DETAIL_CARD_VERSION = "1";
+const ROOM_DETAIL_CARD_VERSION = "1.0.1";
 
 const clone = (value) => {
   if (typeof structuredClone === "function") {
@@ -543,22 +543,8 @@ class RoomDetailCard extends HTMLElement {
 
     if (section.card_config) {
       let cardConfig = section.card_config;
-      if (typeof cardConfig === "string") {
-        try {
-          // Try js-yaml (available in HA frontend)
-          if (typeof jsyaml !== "undefined" && jsyaml.load) {
-            cardConfig = jsyaml.load(cardConfig);
-          } else if (typeof window.jsyaml !== "undefined" && window.jsyaml.load) {
-            cardConfig = window.jsyaml.load(cardConfig);
-          } else {
-            // Fallback: try JSON parse
-            cardConfig = JSON.parse(cardConfig);
-          }
-        } catch (_) {
-          return;
-        }
-      }
-      if (cardConfig && typeof cardConfig === "object") {
+      // If it's already an object (from config), use directly
+      if (typeof cardConfig === "object" && cardConfig !== null) {
         cards.push(cardConfig);
       }
     }
@@ -988,7 +974,7 @@ class RoomDetailCardEditor extends HTMLElement {
     this._captureOpenState();
     const sections = [...(this._config.custom_sections || [])];
     const newIndex = sections.length;
-    sections.push({ title: "Neuer Abschnitt", card_config: "" });
+    sections.push({ title: "Neuer Abschnitt", card_config: {} });
     this._config.custom_sections = sections;
 
     const order = [...(this._config.section_order || [])];
@@ -1135,20 +1121,6 @@ class RoomDetailCardEditor extends HTMLElement {
           margin-bottom: 8px;
         }
 
-        .custom-section-yaml {
-          width: 100%;
-          box-sizing: border-box;
-          min-height: 120px;
-          padding: 8px 12px;
-          border: 1px solid var(--divider-color);
-          border-radius: 8px;
-          background: var(--secondary-background-color);
-          color: var(--primary-text-color);
-          font-family: monospace;
-          font-size: 0.85rem;
-          resize: vertical;
-        }
-
         .custom-section-label {
           font-size: 0.85rem;
           color: var(--secondary-text-color);
@@ -1179,7 +1151,7 @@ class RoomDetailCardEditor extends HTMLElement {
                   <div class="custom-section-label">Überschrift</div>
                   <input class="custom-section-title" type="text" data-index="${idx}" value="${(section.title || "").replace(/"/g, "&quot;")}" placeholder="Abschnittstitel" />
                   <div class="custom-section-label">Karten-Konfiguration (YAML)</div>
-                  <textarea class="custom-section-yaml" data-index="${idx}" placeholder="type: markdown\ncontent: Hallo Welt">${typeof section.card_config === "string" ? section.card_config : JSON.stringify(section.card_config || "", null, 2)}</textarea>
+                  <div class="custom-yaml-host" data-index="${idx}"></div>
                   <div class="buttons">
                     <button type="button" class="danger" data-action="remove-custom" data-index="${idx}">Abschnitt entfernen</button>
                   </div>
@@ -1275,17 +1247,24 @@ class RoomDetailCardEditor extends HTMLElement {
       });
     });
 
-    // Custom section YAML textareas
-    this.shadowRoot.querySelectorAll(".custom-section-yaml").forEach((textarea) => {
-      textarea.addEventListener("input", (e) => {
-        const idx = parseInt(e.target.dataset.index, 10);
-        const sections = [...(this._config.custom_sections || [])];
-        if (sections[idx]) {
-          sections[idx] = { ...sections[idx], card_config: e.target.value };
-          this._config.custom_sections = sections;
-          this._fireChanged();
+    // Custom section YAML editors
+    this.shadowRoot.querySelectorAll(".custom-yaml-host").forEach((host) => {
+      const idx = parseInt(host.dataset.index, 10);
+      const section = (this._config.custom_sections || [])[idx] || {};
+      const yamlEditor = document.createElement("ha-yaml-editor");
+      yamlEditor.defaultValue = section.card_config || {};
+      yamlEditor.addEventListener("value-changed", (e) => {
+        const value = e.detail?.value;
+        if (value && typeof value === "object") {
+          const sections = [...(this._config.custom_sections || [])];
+          if (sections[idx]) {
+            sections[idx] = { ...sections[idx], card_config: value };
+            this._config.custom_sections = sections;
+            this._fireChanged();
+          }
         }
       });
+      host.appendChild(yamlEditor);
     });
 
     // Custom section remove buttons
