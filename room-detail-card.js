@@ -306,6 +306,9 @@ class RoomDetailCard extends HTMLElement {
         ...(item.name ? { name: item.name } : {}),
         ...(item.icon ? { icon: item.icon } : {}),
       })),
+      card_mod: {
+        style: "div.entities { justify-content: center; }",
+      },
     });
   }
 
