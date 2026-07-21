@@ -297,23 +297,47 @@ class RoomDetailCard extends HTMLElement {
     });
   }
 
+  _switchRow(item) {
+    return {
+      type: "horizontal-stack",
+      cards: [
+        {
+          type: "custom:mushroom-entity-card",
+          entity: item.entity,
+          ...(item.icon ? { icon: item.icon } : {}),
+          primary_info: "none",
+          secondary_info: "none",
+          tap_action: { action: "toggle" },
+          hold_action: { action: "none" },
+          double_tap_action: { action: "none" },
+          card_mod: {
+            style:
+              "ha-card { width: 65px; transition-property: none !important; }",
+          },
+        },
+        {
+          type: "custom:mushroom-entity-card",
+          entity: item.entity,
+          ...(item.name ? { name: item.name } : {}),
+          icon_type: "none",
+          tap_action: { action: "more-info" },
+          hold_action: { action: "more-info" },
+          double_tap_action: { action: "none" },
+          card_mod: {
+            style:
+              "ha-card { margin-left: calc(-100% + 55px); transition-property: none !important; }",
+          },
+        },
+      ],
+    };
+  }
+
   _buildSwitchSection(cards) {
     const switches = this._config.switches.filter((item) => item?.entity);
     if (!switches.length) return;
 
     cards.push(this._sectionTitle(this._config.switches_title || "Schalter"));
-
-    for (const item of switches) {
-      cards.push({
-        type: "custom:mushroom-entity-card",
-        entity: item.entity,
-        ...(item.name ? { name: item.name } : {}),
-        ...(item.icon ? { icon: item.icon } : {}),
-        tap_action: { action: item.tap_action || "toggle" },
-        hold_action: { action: "more-info" },
-        double_tap_action: { action: "none" },
-      });
-    }
+    cards.push(...switches.map((item) => this._switchRow(item)));
   }
 
   _buildCoverSection(cards) {
