@@ -6,7 +6,7 @@
  * Card type: custom:room-navigation-card
  */
 
-const ROOM_NAV_CARD_VERSION = "0.3.2";
+const ROOM_NAV_CARD_VERSION = "0.4.0";
 const ACTIVE_STATES = new Set([
   "on",
   "open",
@@ -318,6 +318,25 @@ class RoomNavigationCard extends HTMLElement {
     `;
   }
 
+  _resolveColor(room) {
+    // Support fixed icon_color per tile (e.g. "red", "green", "amber")
+    // Also supports a color_entity: if that entity is active, use active color
+    const colorMap = {
+      amber: { fg: "rgb(255, 193, 7)", bg: "rgba(255, 193, 7, 0.2)" },
+      yellow: { fg: "rgb(255, 235, 59)", bg: "rgba(255, 235, 59, 0.2)" },
+      red: { fg: "rgb(244, 67, 54)", bg: "rgba(244, 67, 54, 0.2)" },
+      green: { fg: "rgb(76, 175, 80)", bg: "rgba(76, 175, 80, 0.2)" },
+      blue: { fg: "rgb(33, 150, 243)", bg: "rgba(33, 150, 243, 0.2)" },
+      orange: { fg: "rgb(255, 152, 0)", bg: "rgba(255, 152, 0, 0.2)" },
+      purple: { fg: "rgb(156, 39, 176)", bg: "rgba(156, 39, 176, 0.2)" },
+      cyan: { fg: "rgb(0, 188, 212)", bg: "rgba(0, 188, 212, 0.2)" },
+    };
+    if (room.icon_color && colorMap[room.icon_color]) {
+      return colorMap[room.icon_color];
+    }
+    return null;
+  }
+
   _renderRoom(room, index) {
     const isActive = this._anyActive(
       room.status_entities || room.status_entity
@@ -328,18 +347,25 @@ class RoomNavigationCard extends HTMLElement {
     const icon = escapeHtml(room.icon || "mdi:home-outline");
     const path = escapeHtml(room.navigation_path || "");
 
+    // Custom icon color override
+    const fixedColor = this._resolveColor(room);
+    let iconCellStyle = "";
+    if (fixedColor) {
+      iconCellStyle = `style="color: ${fixedColor.fg}; background: ${fixedColor.bg};"`;
+    }
+
     return `
       <button
         class="room-tile ${isActive ? "active" : "inactive"} ${
       showInfo ? "" : "compact"
-    }"
+    } ${fixedColor ? "custom-color" : ""}"
         type="button"
         data-room-index="${index}"
         data-navigation-path="${path}"
         aria-label="${name} öffnen"
       >
         ${this._renderStatusIcons(room)}
-        <div class="icon-cell"><ha-icon icon="${icon}"></ha-icon></div>
+        <div class="icon-cell" ${iconCellStyle}><ha-icon icon="${icon}"></ha-icon></div>
         <div class="room-name">${name}</div>
         ${
           showInfo
@@ -514,6 +540,16 @@ class RoomNavigationCard extends HTMLElement {
         .active .icon-cell {
           color: var(--room-nav-active);
           background: var(--room-nav-active-bg);
+        }
+
+        .custom-color .icon-cell {
+          /* When icon_color is set, inline style takes precedence;
+             prevent active/inactive from overriding it */
+        }
+
+        .active.custom-color .icon-cell {
+          color: inherit;
+          background: inherit;
         }
 
         .icon-cell ha-icon {
@@ -862,6 +898,19 @@ class RoomNavigationCardEditor extends HTMLElement {
         selector: { text: {} },
       },
       {
+        name: "icon_color",
+        selector: { select: { options: [
+          { value: "", label: "Standard (blau/gelb)" },
+          { value: "red", label: "Rot" },
+          { value: "green", label: "Grün" },
+          { value: "orange", label: "Orange" },
+          { value: "purple", label: "Lila" },
+          { value: "cyan", label: "Cyan" },
+          { value: "amber", label: "Amber" },
+          { value: "blue", label: "Blau (fest)" },
+        ], mode: "dropdown" } },
+      },
+      {
         name: "status_entities",
         selector: {
           entity: {
@@ -1031,6 +1080,7 @@ class RoomNavigationCardEditor extends HTMLElement {
       name: "Raumname",
       icon: "Icon",
       navigation_path: "Navigationspfad",
+      icon_color: "Feste Icon-Farbe",
       status_entities: "Status-/Licht-Entitäten",
       climate_entity: "Thermostat / Climate-Entität",
       temperature_entity: "Temperatursensor",
@@ -1401,6 +1451,7 @@ class RoomNavigationCardEditor extends HTMLElement {
         icon: room.icon ?? "mdi:home-outline",
         navigation_path:
           room.navigation_path ?? "",
+        icon_color: room.icon_color ?? "",
         status_entities: normalizeEntityList(
           room.status_entities ||
             room.status_entity
