@@ -1,18 +1,19 @@
 /*
  * Camera Grid Card for Home Assistant
- * Version 1.0.0
+ * Version 1.1.0
  *
- * Configurable camera overview grid supporting multiple camera types:
+ * Configurable camera overview grid supporting:
  * - webrtc (custom:webrtc-camera)
  * - picture-entity (simple live/auto view)
  * - picture-elements (PTZ overlay controls)
  * - conditional visibility per camera
  * - overlay elements (photo/video links)
+ * - aspect_ratio for all types
  *
  * Card type: custom:camera-grid-card
  */
 
-const CAMERA_GRID_CARD_VERSION = "1.0.0";
+const CAMERA_GRID_CARD_VERSION = "1.1.0";
 
 class CameraGridCard extends HTMLElement {
   constructor() {
@@ -32,23 +33,16 @@ class CameraGridCard extends HTMLElement {
     return {
       columns: 2,
       square: false,
+      aspect_ratio: "16:9",
       cameras: [
-        {
-          type: "picture-entity",
-          entity: "",
-          name: "",
-          camera_view: "auto",
-          fit_mode: "cover",
-        },
+        { type: "picture-entity", entity: "", name: "", camera_view: "auto", fit_mode: "cover" },
       ],
     };
   }
 
   set hass(hass) {
     this._hass = hass;
-    if (this._generatedCard) {
-      this._generatedCard.hass = hass;
-    }
+    if (this._generatedCard) this._generatedCard.hass = hass;
   }
 
   setConfig(config) {
@@ -56,6 +50,7 @@ class CameraGridCard extends HTMLElement {
     this._config = {
       columns: 2,
       square: false,
+      aspect_ratio: "16:9",
       cameras: [],
       ...JSON.parse(JSON.stringify(config)),
     };
@@ -71,7 +66,6 @@ class CameraGridCard extends HTMLElement {
 
   async _buildCard() {
     const token = ++this._renderToken;
-
     if (!this.shadowRoot) return;
     this.shadowRoot.innerHTML = "<div id='host'></div>";
     const host = this.shadowRoot.getElementById("host");
@@ -98,10 +92,7 @@ class CameraGridCard extends HTMLElement {
   }
 
   _buildGridConfig() {
-    const cards = this._config.cameras
-      .map((cam) => this._buildCameraCard(cam))
-      .filter(Boolean);
-
+    const cards = this._config.cameras.map((cam) => this._buildCameraEntry(cam)).filter(Boolean);
     return {
       type: "grid",
       columns: this._config.columns || 2,
@@ -110,93 +101,86 @@ class CameraGridCard extends HTMLElement {
     };
   }
 
-  _buildCameraCard(cam) {
-    let card;
+  _buildCameraEntry(cam) {
+    // If this camera has conditional_cards, build a vertical-stack of conditionals
+    if (cam.conditional_cards && cam.conditional_cards.length > 0) {
+      const innerCards = cam.conditional_cards.map((cc) => {
+        const innerCard = this._buildSingleCamera(cc);
+        if (cc.conditions && cc.conditions.length > 0) {
+          return { type: "conditional", conditions: cc.conditions, card: innerCard };
+        }
+        return innerCard;
+      });
+      return { type: "vertical-stack", cards: innerCards };
+    }
+
+    // Build the base camera card
+    const card = this._buildSingleCamera(cam);
+
+    // Wrap with conditions if present
+    let result = card;
+    if (cam.conditions && cam.conditions.length > 0) {
+      result = { type: "conditional", conditions: cam.conditions, card };
+    }
+
+    // Wrap with overlays if present
+    if (cam.overlays && cam.overlays.length > 0) {
+      const overlayCards = cam.overlays.map((o) => this._buildOverlay(o));
+      if (result.type === "conditional") {
+        // Put overlay inside the conditional card as vertical-stack
+        result.card = { type: "vertical-stack", cards: [card, ...overlayCards] };
+      } else {
+        result = { type: "vertical-stack", cards: [result, ...overlayCards] };
+      }
+    }
+
+    return result;
+  }
+
+  _buildSingleCamera(cam) {
+    const globalAspect = this._config.aspect_ratio || "16:9";
 
     switch (cam.type) {
       case "webrtc":
-        card = {
+        return {
           type: "custom:webrtc-camera",
           entity: cam.entity,
           ...(cam.url ? { url: cam.url } : {}),
         };
-        break;
 
       case "picture-entity":
-        card = {
+        return {
           type: "picture-entity",
           entity: cam.entity,
           show_state: false,
           show_name: false,
           camera_view: cam.camera_view || "auto",
           fit_mode: cam.fit_mode || "cover",
+          aspect_ratio: cam.aspect_ratio || globalAspect,
           ...(cam.camera_image ? { camera_image: cam.camera_image } : {}),
           ...(cam.image ? { image: cam.image } : {}),
           ...(cam.tap_action ? { tap_action: cam.tap_action } : {}),
           ...(cam.hold_action ? { hold_action: cam.hold_action } : {}),
         };
-        break;
 
       case "picture-elements":
-        card = this._buildPTZCard(cam);
-        break;
+        return this._buildPTZCard(cam);
 
       default:
-        return null;
+        return { type: "markdown", content: `Unbekannter Kameratyp: ${cam.type}` };
     }
-
-    // Wrap in conditional if conditions are set
-    if (cam.conditions && cam.conditions.length > 0) {
-      return {
-        type: "conditional",
-        conditions: cam.conditions,
-        card,
-      };
-    }
-
-    // Wrap in vertical-stack if overlays exist
-    if (cam.overlays && cam.overlays.length > 0) {
-      return {
-        type: "vertical-stack",
-        cards: [
-          card,
-          ...cam.overlays.map((overlay) => this._buildOverlay(overlay)),
-        ],
-      };
-    }
-
-    // Conditional + overlays combined
-    if (cam.conditional_cards && cam.conditional_cards.length > 0) {
-      return {
-        type: "vertical-stack",
-        cards: cam.conditional_cards.map((cc) => {
-          const innerCard = this._buildCameraCard({ ...cc, conditional_cards: undefined });
-          if (cc.conditions && cc.conditions.length > 0) {
-            return {
-              type: "conditional",
-              conditions: cc.conditions,
-              card: innerCard,
-            };
-          }
-          return innerCard;
-        }),
-      };
-    }
-
-    return card;
   }
 
   _buildPTZCard(cam) {
+    const globalAspect = this._config.aspect_ratio || "16:9";
     const elements = [];
 
-    // PTZ direction controls
     if (cam.ptz) {
       const ptz = cam.ptz;
-      const btnStyle = {
-        background: "rgba(255, 255, 255, 1)",
-        color: "rgba(0,0,0,1)",
-      };
+      const btnStyle = { background: "rgba(255,255,255,1)", color: "rgba(0,0,0,1)" };
 
+      // D-Pad: positioned bottom-right as a cross pattern
+      // Center of cross: bottom:25px, right:25px
       if (ptz.up) {
         elements.push({
           type: "icon", icon: "mdi:arrow-up",
@@ -225,6 +209,18 @@ class CameraGridCard extends HTMLElement {
           tap_action: { action: "call-service", service: ptz.right },
         });
       }
+
+      // Fullscreen: center of the D-Pad
+      if (cam.entity) {
+        elements.push({
+          type: "icon", icon: "mdi:fullscreen",
+          entity: cam.entity,
+          style: { ...btnStyle, bottom: "25px", right: "25px" },
+          tap_action: { action: "more-info" },
+        });
+      }
+
+      // Zoom: bottom-left
       if (ptz.zoom_in) {
         elements.push({
           type: "icon", icon: "mdi:plus",
@@ -240,31 +236,25 @@ class CameraGridCard extends HTMLElement {
         });
       }
 
-      // Fullscreen button
-      if (cam.entity) {
-        elements.push({
-          type: "icon", icon: "mdi:fullscreen",
-          entity: cam.entity,
-          style: { ...btnStyle, bottom: "25px", right: "25px" },
-          tap_action: { action: "more-info" },
-        });
-      }
-
-      // Presets
+      // Presets: positioned along the bottom row and second row next to D-Pad
       if (ptz.presets && Array.isArray(ptz.presets)) {
         ptz.presets.forEach((preset, index) => {
-          const positions = this._presetPositions(index, ptz.presets.length);
+          // Layout: presets go bottom-right, stacking up and to the left of D-Pad arrows
+          // Row 0: bottom: 0px, Row 1: bottom: 50px
+          // Col 0: right: 50px, Col 1: right: 0px
+          const row = Math.floor(index / 2);
+          const col = index % 2;
           elements.push({
             type: "icon",
             icon: `mdi:numeric-${index + 1}`,
-            style: { ...btnStyle, ...positions },
+            style: { ...btnStyle, bottom: `${row * 50}px`, right: `${col * 25 + 50}px` },
             tap_action: { action: "call-service", service: preset.service },
           });
         });
       }
     }
 
-    // Custom raw elements (pass-through)
+    // Raw elements pass-through
     if (cam.elements && Array.isArray(cam.elements)) {
       elements.push(...cam.elements);
     }
@@ -273,18 +263,8 @@ class CameraGridCard extends HTMLElement {
       type: "picture-elements",
       camera_image: cam.camera_image || cam.entity,
       camera_view: cam.camera_view || "live",
-      aspect_ratio: cam.aspect_ratio || "16:9",
+      aspect_ratio: cam.aspect_ratio || globalAspect,
       elements,
-    };
-  }
-
-  _presetPositions(index, total) {
-    // Position presets in bottom-right area, stacked
-    const col = index % 2;
-    const row = Math.floor(index / 2);
-    return {
-      bottom: `${row * 25}px`,
-      right: `${col * 25}px`,
     };
   }
 
@@ -296,7 +276,6 @@ class CameraGridCard extends HTMLElement {
         ...(overlay.card_mod ? { card_mod: overlay.card_mod } : {}),
       };
     }
-    // Pass-through for other overlay types
     return overlay;
   }
 }
@@ -349,6 +328,7 @@ class CameraGridCardEditor extends HTMLElement {
     return [
       { name: "columns", selector: { number: { min: 1, max: 4, step: 1, mode: "box" } } },
       { name: "square", selector: { boolean: {} } },
+      { name: "aspect_ratio", selector: { text: {} } },
     ];
   }
 
@@ -361,6 +341,7 @@ class CameraGridCardEditor extends HTMLElement {
       ] } } },
       { name: "entity", selector: { entity: { filter: [{ domain: "camera" }] } } },
       { name: "name", selector: { text: {} } },
+      { name: "aspect_ratio", selector: { text: {} } },
     ];
 
     if (cam.type === "picture-entity" || cam.type === "picture-elements") {
@@ -380,7 +361,6 @@ class CameraGridCardEditor extends HTMLElement {
     }
 
     if (cam.type === "picture-elements") {
-      schema.push({ name: "aspect_ratio", selector: { text: {} } });
       schema.push({ name: "ptz_up", selector: { text: {} } });
       schema.push({ name: "ptz_down", selector: { text: {} } });
       schema.push({ name: "ptz_left", selector: { text: {} } });
@@ -401,13 +381,13 @@ class CameraGridCardEditor extends HTMLElement {
     const labels = {
       columns: "Spalten",
       square: "Quadratisch",
+      aspect_ratio: "Seitenverhältnis (z.B. 16:9)",
       type: "Kameratyp",
       entity: "Kamera-Entität",
       name: "Name",
       camera_view: "Ansicht",
       fit_mode: "Bildanpassung",
       image: "Platzhalterbild (URL)",
-      aspect_ratio: "Seitenverhältnis",
       url: "Stream-URL",
       ptz_up: "PTZ Hoch (Service)",
       ptz_down: "PTZ Runter (Service)",
@@ -415,41 +395,29 @@ class CameraGridCardEditor extends HTMLElement {
       ptz_right: "PTZ Rechts (Service)",
       ptz_zoom_in: "PTZ Zoom+ (Service)",
       ptz_zoom_out: "PTZ Zoom- (Service)",
-      presets_yaml: "Presets (YAML: - service: ...)",
+      presets_yaml: "Presets (je Zeile: - service: ...)",
     };
     return labels[schema.name] || schema.name;
   }
 
   _addCamera() {
-    this._config.cameras.push({
-      type: "picture-entity",
-      entity: "",
-      name: "",
-      camera_view: "auto",
-      fit_mode: "cover",
-    });
+    this._config.cameras.push({ type: "picture-entity", entity: "", name: "", camera_view: "auto", fit_mode: "cover" });
     this._openKeys.add(`cam:${this._config.cameras.length - 1}`);
     this._fire();
     this._render();
   }
 
-  _removeCamera(index) {
-    this._config.cameras.splice(index, 1);
-    this._fire();
-    this._render();
-  }
+  _removeCamera(index) { this._config.cameras.splice(index, 1); this._fire(); this._render(); }
 
   _moveCamera(index, direction) {
     const target = index + direction;
     const cams = this._config.cameras;
     if (target < 0 || target >= cams.length) return;
     [cams[index], cams[target]] = [cams[target], cams[index]];
-    this._fire();
-    this._render();
+    this._fire(); this._render();
   }
 
   _flattenCam(cam) {
-    // Decompose ptz object into flat fields for editor
     const flat = { ...cam };
     if (cam.ptz) {
       flat.ptz_up = cam.ptz.up || "";
@@ -458,9 +426,7 @@ class CameraGridCardEditor extends HTMLElement {
       flat.ptz_right = cam.ptz.right || "";
       flat.ptz_zoom_in = cam.ptz.zoom_in || "";
       flat.ptz_zoom_out = cam.ptz.zoom_out || "";
-      if (cam.ptz.presets) {
-        flat.presets_yaml = cam.ptz.presets.map((p) => `- service: ${p.service}`).join("\n");
-      }
+      if (cam.ptz.presets) flat.presets_yaml = cam.ptz.presets.map((p) => `- service: ${p.service}`).join("\n");
       delete flat.ptz;
     }
     return flat;
@@ -468,7 +434,6 @@ class CameraGridCardEditor extends HTMLElement {
 
   _recomposeCam(flat) {
     const cam = { ...flat };
-    // Recompose PTZ
     if (cam.type === "picture-elements") {
       cam.ptz = {};
       if (cam.ptz_up) cam.ptz.up = cam.ptz_up;
@@ -478,22 +443,15 @@ class CameraGridCardEditor extends HTMLElement {
       if (cam.ptz_zoom_in) cam.ptz.zoom_in = cam.ptz_zoom_in;
       if (cam.ptz_zoom_out) cam.ptz.zoom_out = cam.ptz_zoom_out;
       if (cam.presets_yaml) {
-        try {
-          const lines = cam.presets_yaml.split("\n").filter((l) => l.trim());
-          cam.ptz.presets = lines.map((l) => {
-            const match = l.match(/service:\s*(.+)/);
-            return match ? { service: match[1].trim() } : null;
-          }).filter(Boolean);
-        } catch (_) {}
+        const lines = cam.presets_yaml.split("\n").filter((l) => l.trim());
+        cam.ptz.presets = lines.map((l) => {
+          const m = l.match(/service:\s*(.+)/);
+          return m ? { service: m[1].trim() } : null;
+        }).filter(Boolean);
       }
     }
-    delete cam.ptz_up;
-    delete cam.ptz_down;
-    delete cam.ptz_left;
-    delete cam.ptz_right;
-    delete cam.ptz_zoom_in;
-    delete cam.ptz_zoom_out;
-    delete cam.presets_yaml;
+    delete cam.ptz_up; delete cam.ptz_down; delete cam.ptz_left; delete cam.ptz_right;
+    delete cam.ptz_zoom_in; delete cam.ptz_zoom_out; delete cam.presets_yaml;
     return cam;
   }
 
@@ -505,117 +463,62 @@ class CameraGridCardEditor extends HTMLElement {
       <style>
         :host { display: block; }
         .editor { display: flex; flex-direction: column; gap: 16px; }
-        .block {
-          border: 1px solid var(--divider-color);
-          border-radius: 12px; padding: 12px;
-          background: var(--card-background-color);
-        }
-        .cam-header {
-          display: flex; align-items: center; gap: 8px;
-          font-weight: 600; margin-bottom: 8px;
-        }
-        .cam-header span { flex: 1; }
-        details {
-          border: 1px solid var(--divider-color);
-          border-radius: 10px; margin: 6px 0; overflow: hidden;
-        }
-        summary {
-          cursor: pointer; padding: 10px 12px; font-weight: 500;
-          background: var(--secondary-background-color);
-          display: flex; align-items: center; gap: 8px;
-          list-style: none;
-        }
+        .block { border: 1px solid var(--divider-color); border-radius: 12px; padding: 12px; background: var(--card-background-color); }
+        details { border: 1px solid var(--divider-color); border-radius: 10px; margin: 6px 0; overflow: hidden; }
+        summary { cursor: pointer; padding: 10px 12px; font-weight: 500; background: var(--secondary-background-color); display: flex; align-items: center; gap: 8px; list-style: none; }
         summary::-webkit-details-marker { display: none; }
         .cam-body { padding: 10px 12px; }
         .cam-actions { display: flex; gap: 6px; margin-top: 8px; flex-wrap: wrap; }
-        button {
-          border: 1px solid var(--divider-color);
-          background: var(--secondary-background-color);
-          color: var(--primary-text-color);
-          border-radius: 8px; min-height: 34px; padding: 0 10px;
-          cursor: pointer; font: inherit; font-size: 0.85rem;
-        }
-        button.primary {
-          background: var(--primary-color);
-          color: var(--text-primary-color, white);
-          border-color: var(--primary-color);
-        }
+        button { border: 1px solid var(--divider-color); background: var(--secondary-background-color); color: var(--primary-text-color); border-radius: 8px; min-height: 34px; padding: 0 10px; cursor: pointer; font: inherit; font-size: 0.85rem; }
+        button.primary { background: var(--primary-color); color: var(--text-primary-color, white); border-color: var(--primary-color); }
         button.danger { color: var(--error-color); }
         button:disabled { opacity: 0.4; cursor: default; }
         h3 { margin: 0 0 12px; font-size: 1rem; }
       </style>
-
       <div class="editor">
-        <div class="block">
-          <h3>Allgemein</h3>
-          <div id="global-form"></div>
-        </div>
-
-        <div class="block">
-          <h3>Kameras</h3>
-          <div id="cameras"></div>
+        <div class="block"><h3>Allgemein</h3><div id="global-form"></div></div>
+        <div class="block"><h3>Kameras</h3><div id="cameras"></div>
           <button class="primary" id="add-cam" type="button">+ Kamera hinzufügen</button>
         </div>
       </div>
     `;
 
-    // Global form
     const globalHost = this.shadowRoot.getElementById("global-form");
     const globalForm = document.createElement("ha-form");
     globalForm.hass = this._hass;
-    globalForm.data = { columns: this._config.columns || 2, square: this._config.square || false };
+    globalForm.data = { columns: this._config.columns || 2, square: this._config.square || false, aspect_ratio: this._config.aspect_ratio || "16:9" };
     globalForm.schema = this._globalSchema();
     globalForm.computeLabel = (s) => this._label(s);
-    globalForm.addEventListener("value-changed", (e) => {
-      this._config = { ...this._config, ...(e.detail?.value || {}) };
-      this._fire();
-    });
+    globalForm.addEventListener("value-changed", (e) => { this._config = { ...this._config, ...(e.detail?.value || {}) }; this._fire(); });
     globalHost.appendChild(globalForm);
 
-    // Camera list
     const camHost = this.shadowRoot.getElementById("cameras");
     cameras.forEach((cam, index) => {
       const key = `cam:${index}`;
       const isOpen = this._openKeys.has(key);
       const label = cam.name || cam.entity || cam.type || `Kamera ${index + 1}`;
-
       const details = document.createElement("details");
       details.dataset.openKey = key;
       details.open = isOpen;
-      details.innerHTML = `
-        <summary>${label}</summary>
-        <div class="cam-body">
-          <div class="form-host"></div>
-          <div class="cam-actions">
-            <button type="button" data-action="up" ${index === 0 ? "disabled" : ""}>&#8593;</button>
-            <button type="button" data-action="down" ${index === cameras.length - 1 ? "disabled" : ""}>&#8595;</button>
-            <button type="button" class="danger" data-action="remove">Entfernen</button>
-          </div>
-        </div>
-      `;
+      details.innerHTML = `<summary>${label}</summary><div class="cam-body"><div class="form-host"></div>
+        <div class="cam-actions">
+          <button type="button" data-action="up" ${index === 0 ? "disabled" : ""}>&#8593;</button>
+          <button type="button" data-action="down" ${index === cameras.length - 1 ? "disabled" : ""}>&#8595;</button>
+          <button type="button" class="danger" data-action="remove">Entfernen</button>
+        </div></div>`;
+      details.addEventListener("toggle", () => { if (details.open) this._openKeys.add(key); else this._openKeys.delete(key); });
 
-      details.addEventListener("toggle", () => {
-        if (details.open) this._openKeys.add(key);
-        else this._openKeys.delete(key);
-      });
-
-      const formHost = details.querySelector(".form-host");
       const form = document.createElement("ha-form");
       form.hass = this._hass;
       form.data = this._flattenCam(cam);
       form.schema = this._cameraSchema(cam);
       form.computeLabel = (s) => this._label(s);
-      form.addEventListener("value-changed", (e) => {
-        const val = e.detail?.value || {};
-        this._config.cameras[index] = this._recomposeCam(val);
-        this._fire();
-      });
-      formHost.appendChild(form);
+      form.addEventListener("value-changed", (e) => { this._config.cameras[index] = this._recomposeCam(e.detail?.value || {}); this._fire(); });
+      details.querySelector(".form-host").appendChild(form);
 
       details.querySelector('[data-action="up"]')?.addEventListener("click", () => this._moveCamera(index, -1));
       details.querySelector('[data-action="down"]')?.addEventListener("click", () => this._moveCamera(index, 1));
       details.querySelector('[data-action="remove"]')?.addEventListener("click", () => this._removeCamera(index));
-
       camHost.appendChild(details);
     });
 
@@ -624,24 +527,16 @@ class CameraGridCardEditor extends HTMLElement {
   }
 }
 
-
 // --- Registration ---
-
-if (!customElements.get("camera-grid-card")) {
-  customElements.define("camera-grid-card", CameraGridCard);
-}
-
-if (!customElements.get("camera-grid-card-editor")) {
-  customElements.define("camera-grid-card-editor", CameraGridCardEditor);
-}
+if (!customElements.get("camera-grid-card")) customElements.define("camera-grid-card", CameraGridCard);
+if (!customElements.get("camera-grid-card-editor")) customElements.define("camera-grid-card-editor", CameraGridCardEditor);
 
 window.customCards = window.customCards || [];
 if (!window.customCards.some((c) => c.type === "camera-grid-card")) {
   window.customCards.push({
     type: "camera-grid-card",
     name: "Camera Grid Card",
-    description:
-      "Konfigurierbares Kamera-Grid mit WebRTC, Picture-Entity, PTZ-Steuerung, bedingter Sichtbarkeit und Overlays.",
+    description: "Konfigurierbares Kamera-Grid mit WebRTC, Picture-Entity, PTZ-Steuerung, bedingter Sichtbarkeit und Overlays.",
     preview: true,
   });
 }
