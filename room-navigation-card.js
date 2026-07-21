@@ -428,6 +428,9 @@ class RoomNavigationCard extends HTMLElement {
 
           will-change: transform;
           -webkit-tap-highlight-color: transparent;
+
+          /* 3D perspective for icon badge tilt */
+          perspective: 200px;
         }
 
         .room-tile:focus-visible {
@@ -451,6 +454,9 @@ class RoomNavigationCard extends HTMLElement {
           transition:
             transform 180ms cubic-bezier(0.2, 0.8, 0.2, 1),
             box-shadow 180ms ease;
+
+          /* 3D tilt: child receives perspective from parent */
+          transform-style: preserve-3d;
         }
 
         .active .icon-cell {
@@ -546,10 +552,9 @@ class RoomNavigationCard extends HTMLElement {
           }
 
           .room-tile:hover .icon-cell {
-            transform: translateY(-1px) scale(1.13);
-
             box-shadow:
               0 8px 20px rgba(0, 0, 0, 0.24);
+            /* transform is applied dynamically via JS for 3D tilt */
           }
         }
 
@@ -616,6 +621,35 @@ class RoomNavigationCard extends HTMLElement {
       element.addEventListener("click", () =>
         this._navigate(element.dataset.navigationPath)
       );
+
+      // 3D tilt effect on the icon badge
+      const iconCell = element.querySelector(".icon-cell");
+      if (iconCell) {
+        element.addEventListener("mousemove", (e) => {
+          const rect = iconCell.getBoundingClientRect();
+          const centerX = rect.left + rect.width / 2;
+          const centerY = rect.top + rect.height / 2;
+
+          // Distance from cursor to icon center
+          const deltaX = e.clientX - centerX;
+          const deltaY = e.clientY - centerY;
+
+          // Normalize to a max tilt of ~20 degrees, based on distance
+          const maxTilt = 20;
+          const maxDistance = 80;
+
+          const tiltX = Math.max(-maxTilt, Math.min(maxTilt, (deltaY / maxDistance) * maxTilt));
+          const tiltY = Math.max(-maxTilt, Math.min(maxTilt, (-deltaX / maxDistance) * maxTilt));
+
+          // Scale up slightly when hovered
+          iconCell.style.transform =
+            `translateY(-1px) scale(1.13) rotateX(${tiltX}deg) rotateY(${tiltY}deg)`;
+        });
+
+        element.addEventListener("mouseleave", () => {
+          iconCell.style.transform = "";
+        });
+      }
     });
   }
 }
