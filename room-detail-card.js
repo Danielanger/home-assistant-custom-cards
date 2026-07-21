@@ -1,4 +1,4 @@
-const ROOM_DETAIL_CARD_VERSION = "0.4";
+const ROOM_DETAIL_CARD_VERSION = "0.5";
 
 const clone = (value) => {
   if (typeof structuredClone === "function") {
@@ -26,6 +26,7 @@ class RoomDetailCard extends HTMLElement {
   static getStubConfig() {
     return {
       type: "custom:room-detail-card",
+      section_order: ["sensors", "lights", "switches", "covers", "climates", "media_players", "misc", "solar"],
       sensors_title: "Sensoren",
       sensors_columns: 3,
       lights_title: "Licht",
@@ -62,6 +63,7 @@ class RoomDetailCard extends HTMLElement {
     if (!config) throw new Error("Konfiguration fehlt.");
 
     this._config = {
+      section_order: ["sensors", "lights", "switches", "covers", "climates", "media_players", "misc", "solar"],
       sensors_title: "Sensoren",
       sensors_columns: 3,
       lights_title: "Licht",
@@ -89,6 +91,10 @@ class RoomDetailCard extends HTMLElement {
 
     for (const key of ["sensors", "lights", "switches", "covers", "climates", "media_players", "misc", "solar"]) {
       if (!Array.isArray(this._config[key])) this._config[key] = [];
+    }
+
+    if (!Array.isArray(this._config.section_order) || !this._config.section_order.length) {
+      this._config.section_order = ["sensors", "lights", "switches", "covers", "climates", "media_players", "misc", "solar"];
     }
 
     this._renderShell();
@@ -523,24 +529,32 @@ class RoomDetailCard extends HTMLElement {
   _buildStackConfig() {
     const cards = [];
 
-    this._buildSensorSection(cards);
-    this._buildLightSection(cards);
-    this._buildSwitchSection(cards);
-    this._buildCoverSection(cards);
-    this._buildClimateSection(cards);
-    this._buildMediaSection(cards);
-    this._buildGlanceSection(
-      cards,
-      this._config.misc,
-      this._config.misc_title || "Sonstiges",
-      this._config.misc_columns
-    );
-    this._buildGlanceSection(
-      cards,
-      this._config.solar,
-      this._config.solar_title || "Solar",
-      this._config.solar_columns
-    );
+    const sectionBuilders = {
+      sensors: () => this._buildSensorSection(cards),
+      lights: () => this._buildLightSection(cards),
+      switches: () => this._buildSwitchSection(cards),
+      covers: () => this._buildCoverSection(cards),
+      climates: () => this._buildClimateSection(cards),
+      media_players: () => this._buildMediaSection(cards),
+      misc: () => this._buildGlanceSection(
+        cards,
+        this._config.misc,
+        this._config.misc_title || "Sonstiges",
+        this._config.misc_columns
+      ),
+      solar: () => this._buildGlanceSection(
+        cards,
+        this._config.solar,
+        this._config.solar_title || "Solar",
+        this._config.solar_columns
+      ),
+    };
+
+    for (const section of this._config.section_order) {
+      if (sectionBuilders[section]) {
+        sectionBuilders[section]();
+      }
+    }
 
     return {
       type: "custom:stack-in-card",
@@ -910,6 +924,19 @@ class RoomDetailCardEditor extends HTMLElement {
     this._render();
   }
 
+  _moveSection(index, direction) {
+    const target = index + direction;
+    const order = [...this._config.section_order];
+    if (target < 0 || target >= order.length) return;
+
+    this._captureOpenState();
+    [order[index], order[target]] = [order[target], order[index]];
+    this._config.section_order = order;
+
+    this._fireChanged();
+    this._render();
+  }
+
   _render() {
     if (!this.shadowRoot) return;
 
@@ -989,6 +1016,27 @@ class RoomDetailCardEditor extends HTMLElement {
           color: var(--secondary-text-color);
           padding: 4px 0 8px;
         }
+
+        .section-order-item {
+          display: flex;
+          align-items: center;
+          gap: 8px;
+          padding: 8px 12px;
+          border: 1px solid var(--divider-color);
+          border-radius: 8px;
+          margin: 4px 0;
+          background: var(--secondary-background-color);
+        }
+
+        .section-order-item span {
+          flex: 1;
+          font-weight: 500;
+        }
+
+        .section-order-item button {
+          padding: 4px 8px;
+          min-width: 32px;
+        }
       </style>
 
       <div class="editor">
@@ -997,7 +1045,12 @@ class RoomDetailCardEditor extends HTMLElement {
           <div id="global-form"></div>
         </div>
 
-        ${["sensors", "lights", "switches", "covers", "climates", "media_players", "misc", "solar"]
+        <div class="block">
+          <h3>Reihenfolge der Abschnitte</h3>
+          <div id="section-order"></div>
+        </div>
+
+        ${(this._config.section_order || ["sensors", "lights", "switches", "covers", "climates", "media_players", "misc", "solar"])
           .map(
             (key) => `
               <div class="block" data-collection="${key}">
@@ -1043,7 +1096,35 @@ class RoomDetailCardEditor extends HTMLElement {
     });
     globalHost.appendChild(globalForm);
 
-    for (const key of ["sensors", "lights", "switches", "covers", "climates", "media_players", "misc", "solar"]) {
+    // Section order UI
+    const sectionOrderHost = this.shadowRoot.getElementById("section-order");
+    const order = this._config.section_order || ["sensors", "lights", "switches", "covers", "climates", "media_players", "misc", "solar"];
+    order.forEach((key, index) => {
+      const row = document.createElement("div");
+      row.className = "section-order-item";
+
+      const label = document.createElement("span");
+      label.textContent = this._collectionLabel(key);
+
+      const upBtn = document.createElement("button");
+      upBtn.type = "button";
+      upBtn.textContent = "↑";
+      upBtn.disabled = index === 0;
+      upBtn.addEventListener("click", () => this._moveSection(index, -1));
+
+      const downBtn = document.createElement("button");
+      downBtn.type = "button";
+      downBtn.textContent = "↓";
+      downBtn.disabled = index === order.length - 1;
+      downBtn.addEventListener("click", () => this._moveSection(index, 1));
+
+      row.appendChild(upBtn);
+      row.appendChild(label);
+      row.appendChild(downBtn);
+      sectionOrderHost.appendChild(row);
+    });
+
+    for (const key of order) {
       const host = this.shadowRoot.getElementById(`items-${key}`);
       const list = this._config[key];
 
