@@ -1,12 +1,12 @@
 /*
  * Room Navigation Card for Home Assistant
- * Version 0.2.6
+ * Version 0.3
  *
  * Reusable room / navigation overview card with visual editor.
  * Card type: custom:room-navigation-card
  */
 
-const ROOM_NAV_CARD_VERSION = "0.2.7";
+const ROOM_NAV_CARD_VERSION = "0.3";
 const ACTIVE_STATES = new Set([
   "on",
   "open",
