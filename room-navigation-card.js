@@ -6,7 +6,7 @@
  * Card type: custom:room-navigation-card
  */
 
-const ROOM_NAV_CARD_VERSION = "0.3.1";
+const ROOM_NAV_CARD_VERSION = "0.3.2";
 const ACTIVE_STATES = new Set([
   "on",
   "open",
@@ -78,7 +78,59 @@ class RoomNavigationCard extends HTMLElement {
 
   set hass(hass) {
     this._hass = hass;
-    this._render();
+    if (!this.shadowRoot || !this._config) return;
+
+    // If not rendered yet, do a full render
+    if (!this.shadowRoot.querySelector(".grid")) {
+      this._render();
+      return;
+    }
+
+    // Incremental update: only update dynamic content
+    this._updateRoomStates();
+  }
+
+  _updateRoomStates() {
+    const rooms = Array.isArray(this._config.rooms) ? this._config.rooms : [];
+    const tiles = this.shadowRoot.querySelectorAll(".room-tile");
+
+    tiles.forEach((tile, index) => {
+      const room = rooms[index];
+      if (!room) return;
+
+      const isActive = this._anyActive(room.status_entities || room.status_entity);
+      tile.classList.toggle("active", isActive);
+      tile.classList.toggle("inactive", !isActive);
+
+      // Update info text
+      const showInfo = this._config.show_info !== false;
+      if (showInfo) {
+        const infoEl = tile.querySelector(".room-info");
+        if (infoEl) {
+          const info = this._roomInfo(room);
+          infoEl.innerHTML = info ? escapeHtml(info) : "&nbsp;";
+        }
+      }
+
+      // Update status icons
+      const oldOpenings = tile.querySelector(".openings");
+      const oldActivity = tile.querySelector(".activity-icons");
+      if (oldOpenings) oldOpenings.remove();
+      if (oldActivity) oldActivity.remove();
+
+      const statusHtml = this._renderStatusIcons(room);
+      if (statusHtml.trim()) {
+        tile.insertAdjacentHTML("afterbegin", statusHtml);
+      }
+    });
+
+    // Update greeting if shown
+    if (this._config.show_greeting) {
+      const greetingEl = this.shadowRoot.querySelector(".greeting");
+      if (greetingEl) {
+        greetingEl.textContent = this._greeting();
+      }
+    }
   }
 
   getCardSize() {
