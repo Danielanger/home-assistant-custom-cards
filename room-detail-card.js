@@ -1,4 +1,4 @@
-const ROOM_DETAIL_CARD_VERSION = "0.2.5";
+const ROOM_DETAIL_CARD_VERSION = "0.2.6";
 
 const clone = (value) => {
   if (typeof structuredClone === "function") {
@@ -407,45 +407,66 @@ class RoomDetailCard extends HTMLElement {
   }
 
   _lightRow(item) {
-    const row = {
-      type: "horizontal-stack",
-      cards: [
-        {
-          type: "custom:mushroom-light-card",
-          entity: item.entity,
-          ...(item.icon ? { icon: item.icon } : {}),
-          primary_info: "none",
-          secondary_info: "none",
-          use_light_color: false,
-          tap_action: { action: "toggle" },
-          hold_action: { action: "none" },
-          double_tap_action: { action: "none" },
-          card_mod: {
-            style:
-              "ha-card { width: 65px; transition-property: none !important; }",
+    let row;
+
+    if (item.controls_only) {
+      row = {
+        type: "custom:mushroom-light-card",
+        entity: item.entity,
+        icon_type: "none",
+        primary_info: "none",
+        secondary_info: "none",
+        fill_container: true,
+        tap_action: { action: "none" },
+        hold_action: { action: "more-info" },
+        double_tap_action: { action: "none" },
+        use_light_color: item.use_light_color !== false,
+        show_color_temp_control: item.show_color_temp_control !== false,
+        collapsible_controls: false,
+        show_color_control: item.show_color_control !== false,
+        show_brightness_control: item.show_brightness_control !== false,
+      };
+    } else {
+      row = {
+        type: "horizontal-stack",
+        cards: [
+          {
+            type: "custom:mushroom-light-card",
+            entity: item.entity,
+            ...(item.icon ? { icon: item.icon } : {}),
+            primary_info: "none",
+            secondary_info: "none",
+            use_light_color: false,
+            tap_action: { action: "toggle" },
+            hold_action: { action: "none" },
+            double_tap_action: { action: "none" },
+            card_mod: {
+              style:
+                "ha-card { width: 65px; transition-property: none !important; }",
+            },
           },
-        },
-        {
-          type: "custom:mushroom-light-card",
-          entity: item.entity,
-          ...(item.name ? { name: item.name } : {}),
-          icon_type: "none",
-          fill_container: false,
-          tap_action: { action: "more-info" },
-          hold_action: { action: "more-info" },
-          double_tap_action: { action: "more-info" },
-          use_light_color: item.use_light_color !== false,
-          show_color_temp_control: item.show_color_temp_control !== false,
-          collapsible_controls: item.collapsible_controls !== false,
-          show_color_control: item.show_color_control !== false,
-          show_brightness_control: item.show_brightness_control !== false,
-          card_mod: {
-            style:
-              "ha-card { margin-left: calc(-100% + 55px); transition-property: none !important; }",
+          {
+            type: "custom:mushroom-light-card",
+            entity: item.entity,
+            ...(item.name ? { name: item.name } : {}),
+            icon_type: "none",
+            fill_container: false,
+            tap_action: { action: "more-info" },
+            hold_action: { action: "more-info" },
+            double_tap_action: { action: "more-info" },
+            use_light_color: item.use_light_color !== false,
+            show_color_temp_control: item.show_color_temp_control !== false,
+            collapsible_controls: item.collapsible_controls !== false,
+            show_color_control: item.show_color_control !== false,
+            show_brightness_control: item.show_brightness_control !== false,
+            card_mod: {
+              style:
+                "ha-card { margin-left: calc(-100% + 55px); transition-property: none !important; }",
+            },
           },
-        },
-      ],
-    };
+        ],
+      };
+    }
 
     if (item.condition_entity) {
       return {
@@ -457,7 +478,7 @@ class RoomDetailCard extends HTMLElement {
             state: item.condition_state || "on",
           },
         ],
-        card: row,
+        card: item.controls_only ? row : row,
       };
     }
 
@@ -628,6 +649,7 @@ class RoomDetailCardEditor extends HTMLElement {
       show_color_temp_control: "Farbtemperaturregler",
       show_color_control: "Farbregler",
       collapsible_controls: "Bedienelemente einklappbar",
+      controls_only: "Nur Steuerung (ohne Icon/Name)",
       condition_entity: "Nur anzeigen, wenn Entität ...",
       condition_state: "... diesen Zustand hat",
       show_volume_level: "Lautstärke anzeigen",
@@ -726,6 +748,7 @@ class RoomDetailCardEditor extends HTMLElement {
         { name: "entity", selector: { entity: {} } },
         { name: "name", selector: { text: {} } },
         { name: "icon", selector: { icon: {} } },
+        { name: "controls_only", selector: { boolean: {} } },
         { name: "use_light_color", selector: { boolean: {} } },
         { name: "show_brightness_control", selector: { boolean: {} } },
         { name: "show_color_temp_control", selector: { boolean: {} } },
@@ -782,6 +805,7 @@ class RoomDetailCardEditor extends HTMLElement {
         entity: "",
         name: "",
         icon: "",
+        controls_only: false,
         use_light_color: true,
         show_brightness_control: true,
         show_color_temp_control: true,
