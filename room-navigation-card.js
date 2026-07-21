@@ -6,7 +6,7 @@
  * Card type: custom:room-navigation-card
  */
 
-const ROOM_NAV_CARD_VERSION = "0.4.0";
+const ROOM_NAV_CARD_VERSION = "0.5.0";
 const ACTIVE_STATES = new Set([
   "on",
   "open",
