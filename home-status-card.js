@@ -530,16 +530,6 @@ class HomeStatusCardEditor extends HTMLElement {
     }));
   }
 
-  _chipTypeSchema() {
-    return [
-      { name: "type", selector: { select: { options: [
-        { value: "weather", label: "Wetter" },
-        { value: "entity", label: "Entität" },
-        { value: "template", label: "Template" },
-      ] } } },
-    ];
-  }
-
   _chipSchema(chip) {
     const base = [
       { name: "type", selector: { select: { options: [
@@ -549,8 +539,11 @@ class HomeStatusCardEditor extends HTMLElement {
       ] } } },
       { name: "entity", selector: { entity: {} } },
       { name: "icon", selector: { icon: {} } },
-      { name: "name", selector: { text: {} } },
     ];
+
+    if (chip.type !== "template") {
+      base.push({ name: "name", selector: { text: {} } });
+    }
 
     if (chip.type === "weather") {
       base.push({ name: "show_temperature", selector: { boolean: {} } });
@@ -562,7 +555,15 @@ class HomeStatusCardEditor extends HTMLElement {
       base.push({ name: "icon_color", selector: { text: { multiline: true } } });
     }
 
-    base.push({ name: "tap_action", selector: { object: {} } });
+    base.push({ name: "tap_action_type", selector: { select: { options: [
+      { value: "none", label: "Keine Aktion" },
+      { value: "more-info", label: "Mehr Infos" },
+      { value: "navigate", label: "Navigieren" },
+    ] } } });
+
+    if (chip.tap_action_type === "navigate" || chip.tap_action?.action === "navigate") {
+      base.push({ name: "navigation_path", selector: { text: {} } });
+    }
 
     return base;
   }
@@ -573,11 +574,12 @@ class HomeStatusCardEditor extends HTMLElement {
       entity: "Entität",
       icon: "Icon",
       name: "Anzeigename",
-      content: "Template-Inhalt",
-      icon_color: "Icon-Farbe (Template)",
+      content: "Template-Inhalt ({{ states.sensor.xyz.state }} Syntax)",
+      icon_color: "Icon-Farbe (z.B. amber, oder Template)",
       show_temperature: "Temperatur anzeigen",
       show_conditions: "Zustand anzeigen",
-      tap_action: "Tap-Aktion",
+      tap_action_type: "Tap-Aktion",
+      navigation_path: "Navigationspfad",
     };
     return labels[schema.name] || schema.name;
   }
@@ -715,12 +717,35 @@ class HomeStatusCardEditor extends HTMLElement {
         if (formHost) {
           const form = document.createElement("ha-form");
           form.hass = this._hass;
-          form.data = { ...chip };
-          form.schema = this._chipSchema(chip);
+
+          // Decompose tap_action into flat fields for the UI
+          const tapAction = chip.tap_action || { action: "none" };
+          const formData = {
+            ...chip,
+            tap_action_type: tapAction.action || "none",
+            navigation_path: tapAction.navigation_path || "",
+          };
+          delete formData.tap_action;
+
+          form.data = formData;
+          form.schema = this._chipSchema({ ...chip, tap_action_type: formData.tap_action_type });
           form.computeLabel = (s) => this._chipLabel(s);
           form.addEventListener("value-changed", (e) => {
             const val = e.detail?.value || {};
-            this._config.rows[ri].chips[ci] = { ...this._config.rows[ri].chips[ci], ...val };
+
+            // Recompose tap_action from flat fields
+            const actionType = val.tap_action_type || "none";
+            const navPath = val.navigation_path || "";
+            const tapActionObj = { action: actionType };
+            if (actionType === "navigate") {
+              tapActionObj.navigation_path = navPath;
+            }
+
+            const chipData = { ...val, tap_action: tapActionObj };
+            delete chipData.tap_action_type;
+            delete chipData.navigation_path;
+
+            this._config.rows[ri].chips[ci] = chipData;
             this._fire();
           });
           formHost.appendChild(form);
