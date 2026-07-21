@@ -1,4 +1,4 @@
-const ROOM_DETAIL_CARD_VERSION = "1.0.1";
+const ROOM_DETAIL_CARD_VERSION = "1.0.2";
 
 const clone = (value) => {
   if (typeof structuredClone === "function") {
