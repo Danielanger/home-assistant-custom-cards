@@ -535,7 +535,7 @@ class RoomNavigationCard extends HTMLElement {
             z-index: 50;
 
             /* Deliberately strong lift so the hover is clearly visible. */
-            transform: translateY(-6px) scale(0.8);
+            transform: translateY(-6px) scale(0.2);
 
             box-shadow:
               0 24px 52px rgba(0, 0, 0, 0.42),
