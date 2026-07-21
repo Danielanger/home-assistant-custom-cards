@@ -1,4 +1,4 @@
-const ROOM_DETAIL_CARD_VERSION = "0.5";
+const ROOM_DETAIL_CARD_VERSION = "0.6";
 
 const clone = (value) => {
   if (typeof structuredClone === "function") {
@@ -433,7 +433,7 @@ class RoomDetailCard extends HTMLElement {
         show_brightness_control: item.show_brightness_control !== false,
         card_mod: {
               style:
-                "ha-card { margin-left: calc(-100% + 55px); transition-property: none !important; margin-top: -5% }",
+                "ha-card { margin-left: calc(-65px); transition-property: none !important; margin-top: -5% }",
             },
       };
     } else {
