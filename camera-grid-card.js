@@ -7,7 +7,7 @@
  * Per-camera: condition, fallback image, photo/video link overlays.
  * Card type: custom:camera-grid-card
  */
-const CAMERA_GRID_CARD_VERSION = "3.0.0";
+const CAMERA_GRID_CARD_VERSION = "4.0.0";
 
 class CameraGridCard extends HTMLElement {
   constructor() {
@@ -158,18 +158,8 @@ class CameraGridCard extends HTMLElement {
   _entityWithOverlays(cam) {
     // Render picture-entity camera as picture-elements with embedded link icons.
     // photo_url / video_url support {{ states.sensor.xyz.state }} templates.
-    // Tap on the image itself opens the camera entity (more-info).
+    // Tap on the image opens the camera entity (more-info) via the entity prop.
     const elements = [];
-
-    // Full-image tap target to open camera more-info
-    if (cam.entity) {
-      elements.push({
-        type: "state-badge",
-        entity: cam.entity,
-        style: { top: "50%", left: "50%", width: "100%", height: "100%", opacity: "0", cursor: "pointer" },
-        tap_action: { action: "more-info" },
-      });
-    }
 
     if (cam.photo_url) {
       const url = this._resolveTemplate(cam.photo_url);
@@ -190,6 +180,7 @@ class CameraGridCard extends HTMLElement {
 
     return {
       type: "picture-elements",
+      entity: cam.entity,
       camera_image: cam.camera_image || cam.entity,
       camera_view: cam.camera_view || "auto",
       aspect_ratio: "16:9",
