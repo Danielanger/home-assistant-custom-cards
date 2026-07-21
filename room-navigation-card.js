@@ -557,7 +557,7 @@ class RoomNavigationCard extends HTMLElement {
         }
 
         .room-name {
-          font-size: 0.88rem;
+          font-size: 1rem;
           font-weight: 700;
           line-height: 1.15;
           text-align: center;
@@ -669,7 +669,7 @@ class RoomNavigationCard extends HTMLElement {
           }
 
           .room-name {
-            font-size: 0.84rem;
+            font-size: 0.92rem;
           }
 
           .room-info {
