@@ -1,4 +1,4 @@
-const ROOM_DETAIL_CARD_VERSION = "0.8";
+const ROOM_DETAIL_CARD_VERSION = "0.9";
 
 const clone = (value) => {
   if (typeof structuredClone === "function") {
@@ -27,6 +27,7 @@ class RoomDetailCard extends HTMLElement {
     return {
       type: "custom:room-detail-card",
       section_order: ["sensors", "lights", "switches", "covers", "climates", "media_players", "misc", "solar"],
+      custom_sections: [],
       sensors_title: "Sensoren",
       sensors_columns: 3,
       lights_title: "Licht",
@@ -64,6 +65,7 @@ class RoomDetailCard extends HTMLElement {
 
     this._config = {
       section_order: ["sensors", "lights", "switches", "covers", "climates", "media_players", "misc", "solar"],
+      custom_sections: [],
       sensors_title: "Sensoren",
       sensors_columns: 3,
       lights_title: "Licht",
@@ -91,6 +93,10 @@ class RoomDetailCard extends HTMLElement {
 
     for (const key of ["sensors", "lights", "switches", "covers", "climates", "media_players", "misc", "solar"]) {
       if (!Array.isArray(this._config[key])) this._config[key] = [];
+    }
+
+    if (!Array.isArray(this._config.custom_sections)) {
+      this._config.custom_sections = [];
     }
 
     if (!Array.isArray(this._config.section_order) || !this._config.section_order.length) {
@@ -433,7 +439,7 @@ class RoomDetailCard extends HTMLElement {
         show_brightness_control: item.show_brightness_control !== false,
         card_mod: {
               style:
-                "ha-card { margin-left: calc(60px);; transition-property: none !important; margin-top: -5% }",
+                "ha-card { margin-left: 60px; margin-top: -5%; overflow: hidden; position: relative; z-index: 0; transition-property: none !important; }",
             },
       };
     } else {
@@ -526,6 +532,38 @@ class RoomDetailCard extends HTMLElement {
     }
   }
 
+  _buildCustomSection(cards, sectionKey) {
+    const index = parseInt(sectionKey.replace("custom_", ""), 10);
+    const section = this._config.custom_sections[index];
+    if (!section) return;
+
+    if (section.title) {
+      cards.push(this._sectionTitle(section.title));
+    }
+
+    if (section.card_config) {
+      let cardConfig = section.card_config;
+      if (typeof cardConfig === "string") {
+        try {
+          // Try js-yaml (available in HA frontend)
+          if (typeof jsyaml !== "undefined" && jsyaml.load) {
+            cardConfig = jsyaml.load(cardConfig);
+          } else if (typeof window.jsyaml !== "undefined" && window.jsyaml.load) {
+            cardConfig = window.jsyaml.load(cardConfig);
+          } else {
+            // Fallback: try JSON parse
+            cardConfig = JSON.parse(cardConfig);
+          }
+        } catch (_) {
+          return;
+        }
+      }
+      if (cardConfig && typeof cardConfig === "object") {
+        cards.push(cardConfig);
+      }
+    }
+  }
+
   _buildStackConfig() {
     const cards = [];
 
@@ -553,6 +591,8 @@ class RoomDetailCard extends HTMLElement {
     for (const section of this._config.section_order) {
       if (sectionBuilders[section]) {
         sectionBuilders[section]();
+      } else if (section.startsWith("custom_")) {
+        this._buildCustomSection(cards, section);
       }
     }
 
@@ -610,6 +650,8 @@ class RoomDetailCardEditor extends HTMLElement {
     for (const key of ["sensors", "lights", "switches", "covers", "climates", "media_players", "misc", "solar"]) {
       if (!Array.isArray(nextConfig[key])) nextConfig[key] = [];
     }
+
+    if (!Array.isArray(nextConfig.custom_sections)) nextConfig.custom_sections = [];
 
     const hash = JSON.stringify(nextConfig);
     const isOwnEcho = this._emittedHashes.has(hash);
@@ -846,6 +888,11 @@ class RoomDetailCardEditor extends HTMLElement {
   }
 
   _collectionLabel(key) {
+    if (key.startsWith("custom_")) {
+      const index = parseInt(key.replace("custom_", ""), 10);
+      const section = (this._config.custom_sections || [])[index];
+      return section?.title || `Eigener Abschnitt ${index + 1}`;
+    }
     return {
       sensors: "Sensoren",
       lights: "Licht",
@@ -931,6 +978,44 @@ class RoomDetailCardEditor extends HTMLElement {
 
     this._captureOpenState();
     [order[index], order[target]] = [order[target], order[index]];
+    this._config.section_order = order;
+
+    this._fireChanged();
+    this._render();
+  }
+
+  _addCustomSection() {
+    this._captureOpenState();
+    const sections = [...(this._config.custom_sections || [])];
+    const newIndex = sections.length;
+    sections.push({ title: "Neuer Abschnitt", card_config: "" });
+    this._config.custom_sections = sections;
+
+    const order = [...(this._config.section_order || [])];
+    order.push(`custom_${newIndex}`);
+    this._config.section_order = order;
+
+    this._fireChanged();
+    this._render();
+  }
+
+  _removeCustomSection(index) {
+    this._captureOpenState();
+    const sections = [...(this._config.custom_sections || [])];
+    sections.splice(index, 1);
+    this._config.custom_sections = sections;
+
+    // Remove from section_order and reindex subsequent custom sections
+    const sectionKey = `custom_${index}`;
+    let order = [...(this._config.section_order || [])];
+    order = order.filter((k) => k !== sectionKey);
+    order = order.map((k) => {
+      if (k.startsWith("custom_")) {
+        const i = parseInt(k.replace("custom_", ""), 10);
+        if (i > index) return `custom_${i - 1}`;
+      }
+      return k;
+    });
     this._config.section_order = order;
 
     this._fireChanged();
@@ -1037,6 +1122,38 @@ class RoomDetailCardEditor extends HTMLElement {
           padding: 4px 8px;
           min-width: 32px;
         }
+
+        .custom-section-title {
+          width: 100%;
+          box-sizing: border-box;
+          padding: 8px 12px;
+          border: 1px solid var(--divider-color);
+          border-radius: 8px;
+          background: var(--secondary-background-color);
+          color: var(--primary-text-color);
+          font-size: 0.95rem;
+          margin-bottom: 8px;
+        }
+
+        .custom-section-yaml {
+          width: 100%;
+          box-sizing: border-box;
+          min-height: 120px;
+          padding: 8px 12px;
+          border: 1px solid var(--divider-color);
+          border-radius: 8px;
+          background: var(--secondary-background-color);
+          color: var(--primary-text-color);
+          font-family: monospace;
+          font-size: 0.85rem;
+          resize: vertical;
+        }
+
+        .custom-section-label {
+          font-size: 0.85rem;
+          color: var(--secondary-text-color);
+          margin-bottom: 4px;
+        }
       </style>
 
       <div class="editor">
@@ -1048,11 +1165,28 @@ class RoomDetailCardEditor extends HTMLElement {
         <div class="block">
           <h3>Reihenfolge der Abschnitte</h3>
           <div id="section-order"></div>
+          <button class="primary" id="add-custom-section" type="button">+ Eigenen Abschnitt hinzufügen</button>
         </div>
 
         ${(this._config.section_order || ["sensors", "lights", "switches", "covers", "climates", "media_players", "misc", "solar"])
-          .map(
-            (key) => `
+          .map((key) => {
+            if (key.startsWith("custom_")) {
+              const idx = parseInt(key.replace("custom_", ""), 10);
+              const section = (this._config.custom_sections || [])[idx] || {};
+              return `
+                <div class="block" data-custom-section="${idx}">
+                  <h3>${section.title || "Eigener Abschnitt"}</h3>
+                  <div class="custom-section-label">Überschrift</div>
+                  <input class="custom-section-title" type="text" data-index="${idx}" value="${(section.title || "").replace(/"/g, "&quot;")}" placeholder="Abschnittstitel" />
+                  <div class="custom-section-label">Karten-Konfiguration (YAML)</div>
+                  <textarea class="custom-section-yaml" data-index="${idx}" placeholder="type: markdown\ncontent: Hallo Welt">${typeof section.card_config === "string" ? section.card_config : JSON.stringify(section.card_config || "", null, 2)}</textarea>
+                  <div class="buttons">
+                    <button type="button" class="danger" data-action="remove-custom" data-index="${idx}">Abschnitt entfernen</button>
+                  </div>
+                </div>
+              `;
+            }
+            return `
               <div class="block" data-collection="${key}">
                 <h3>${this._collectionLabel(key)}</h3>
                 <div class="items" id="items-${key}"></div>
@@ -1060,8 +1194,8 @@ class RoomDetailCardEditor extends HTMLElement {
                   + Hinzufügen
                 </button>
               </div>
-            `
-          )
+            `;
+          })
           .join("")}
       </div>
     `;
@@ -1124,7 +1258,48 @@ class RoomDetailCardEditor extends HTMLElement {
       sectionOrderHost.appendChild(row);
     });
 
+    // Add custom section button
+    this.shadowRoot.getElementById("add-custom-section")
+      ?.addEventListener("click", () => this._addCustomSection());
+
+    // Custom section title inputs
+    this.shadowRoot.querySelectorAll(".custom-section-title").forEach((input) => {
+      input.addEventListener("input", (e) => {
+        const idx = parseInt(e.target.dataset.index, 10);
+        const sections = [...(this._config.custom_sections || [])];
+        if (sections[idx]) {
+          sections[idx] = { ...sections[idx], title: e.target.value };
+          this._config.custom_sections = sections;
+          this._fireChanged();
+        }
+      });
+    });
+
+    // Custom section YAML textareas
+    this.shadowRoot.querySelectorAll(".custom-section-yaml").forEach((textarea) => {
+      textarea.addEventListener("input", (e) => {
+        const idx = parseInt(e.target.dataset.index, 10);
+        const sections = [...(this._config.custom_sections || [])];
+        if (sections[idx]) {
+          sections[idx] = { ...sections[idx], card_config: e.target.value };
+          this._config.custom_sections = sections;
+          this._fireChanged();
+        }
+      });
+    });
+
+    // Custom section remove buttons
+    this.shadowRoot.querySelectorAll('[data-action="remove-custom"]').forEach((btn) => {
+      btn.addEventListener("click", (e) => {
+        const idx = parseInt(e.target.dataset.index, 10);
+        this._removeCustomSection(idx);
+      });
+    });
+
     for (const key of order) {
+      // Skip custom sections (handled above)
+      if (key.startsWith("custom_")) continue;
+
       const host = this.shadowRoot.getElementById(`items-${key}`);
       const list = this._config[key];
 
