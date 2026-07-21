@@ -7,7 +7,7 @@
  * Per-camera: condition, fallback image, photo/video link overlays.
  * Card type: custom:camera-grid-card
  */
-const CAMERA_GRID_CARD_VERSION = "2.0.0";
+const CAMERA_GRID_CARD_VERSION = "2.5.0";
 
 class CameraGridCard extends HTMLElement {
   constructor() {
@@ -24,7 +24,33 @@ class CameraGridCard extends HTMLElement {
     return { columns: 2, cameras: [{ type: "picture-entity", entity: "" }] };
   }
 
-  set hass(hass) { this._hass = hass; if (this._generatedCard) this._generatedCard.hass = hass; }
+  set hass(hass) {
+    const oldHass = this._hass;
+    this._hass = hass;
+
+    // Check if template-relevant states changed
+    const hasTemplates = (this._config.cameras || []).some((c) =>
+      (c.photo_url && c.photo_url.includes("{{")) || (c.video_url && c.video_url.includes("{{"))
+    );
+
+    if (hasTemplates && oldHass) {
+      // Extract referenced entity IDs
+      const entities = new Set();
+      for (const c of this._config.cameras) {
+        const urls = [c.photo_url, c.video_url].filter(Boolean).join(" ");
+        const matches = urls.matchAll(/\{\{\s*states\.([\w.]+)\.state\s*\}\}/g);
+        for (const m of matches) entities.add(m[1]);
+      }
+      // Rebuild only if one of those states changed
+      let changed = false;
+      for (const eid of entities) {
+        if (oldHass.states?.[eid]?.state !== hass.states?.[eid]?.state) { changed = true; break; }
+      }
+      if (changed) { this._buildCard(); return; }
+    }
+
+    if (this._generatedCard) this._generatedCard.hass = hass;
+  }
 
   setConfig(config) {
     if (!config) throw new Error("Konfiguration fehlt.");
@@ -130,21 +156,25 @@ class CameraGridCard extends HTMLElement {
   }
 
   _entityWithOverlays(cam) {
-    // Render picture-entity camera as picture-elements with embedded link icons
+    // Render picture-entity camera as picture-elements with embedded link icons.
+    // photo_url / video_url support {{ states.sensor.xyz.state }} templates
+    // that get resolved at render time via hass.
     const elements = [];
 
     if (cam.photo_url) {
+      const url = this._resolveTemplate(cam.photo_url);
       elements.push({
         type: "icon", icon: "mdi:camera",
-        style: { color: "#ffd363", background: "none", bottom: "35px", left: "10px", "--mdc-icon-size": "25px" },
-        tap_action: { action: "url", url_path: cam.photo_url },
+        style: { color: "white", background: "rgba(0,0,0,0.4)", "border-radius": "50%", padding: "4px", bottom: "40px", left: "20px", "--mdc-icon-size": "22px" },
+        tap_action: { action: "url", url_path: url },
       });
     }
     if (cam.video_url) {
+      const url = this._resolveTemplate(cam.video_url);
       elements.push({
         type: "icon", icon: "mdi:file-video-outline",
-        style: { color: "#ffd363", background: "none", bottom: "10px", left: "10px", "--mdc-icon-size": "25px" },
-        tap_action: { action: "url", url_path: cam.video_url },
+        style: { color: "white", background: "rgba(0,0,0,0.4)", "border-radius": "50%", padding: "4px", bottom: "10px", left: "20px", "--mdc-icon-size": "22px" },
+        tap_action: { action: "url", url_path: url },
       });
     }
 
@@ -155,6 +185,14 @@ class CameraGridCard extends HTMLElement {
       aspect_ratio: "16:9",
       elements,
     };
+  }
+
+  _resolveTemplate(str) {
+    if (!str || !this._hass) return str || "";
+    return str.replace(/\{\{\s*states\.([\w.]+)\.state\s*\}\}/g, (_, entityId) => {
+      const state = this._hass?.states?.[entityId];
+      return state ? state.state : "";
+    });
   }
 
   _ptzCard(cam) {
