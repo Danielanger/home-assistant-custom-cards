@@ -1,4 +1,4 @@
-const ROOM_DETAIL_CARD_VERSION = "1.0.1";
+const ROOM_DETAIL_CARD_VERSION = "1.0.2";
 
 const clone = (value) => {
   if (typeof structuredClone === "function") {
@@ -264,6 +264,10 @@ class RoomDetailCard extends HTMLElement {
       tap_action: { action: "none" },
       hold_action: { action: "none" },
       double_tap_action: { action: "none" },
+      card_mod: {
+        style:
+          "ha-card mushroom-card .container .primary { font-weight: 700 !important; font-size: 1rem !important; }",
+      },
     };
   }
 
