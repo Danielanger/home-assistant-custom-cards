@@ -5,7 +5,7 @@
  * Configurable camera grid. Supports webrtc, picture-entity, picture-elements (PTZ).
  * Card type: custom:camera-grid-card
  */
-const CAMERA_GRID_CARD_VERSION = "1.2.0";
+const CAMERA_GRID_CARD_VERSION = "1.3.0";
 
 class CameraGridCard extends HTMLElement {
   constructor() {
