@@ -1,19 +1,11 @@
 /*
  * Camera Grid Card for Home Assistant
- * Version 1.1.0
+ * Version 1.2.0
  *
- * Configurable camera overview grid supporting:
- * - webrtc (custom:webrtc-camera)
- * - picture-entity (simple live/auto view)
- * - picture-elements (PTZ overlay controls)
- * - conditional visibility per camera
- * - overlay elements (photo/video links)
- * - aspect_ratio for all types
- *
+ * Configurable camera grid. Supports webrtc, picture-entity, picture-elements (PTZ).
  * Card type: custom:camera-grid-card
  */
-
-const CAMERA_GRID_CARD_VERSION = "1.1.0";
+const CAMERA_GRID_CARD_VERSION = "1.2.0";
 
 class CameraGridCard extends HTMLElement {
   constructor() {
@@ -25,43 +17,24 @@ class CameraGridCard extends HTMLElement {
     this._renderToken = 0;
   }
 
-  static getConfigElement() {
-    return document.createElement("camera-grid-card-editor");
-  }
+  static getConfigElement() { return document.createElement("camera-grid-card-editor"); }
 
   static getStubConfig() {
-    return {
-      columns: 2,
-      square: false,
-      aspect_ratio: "16:9",
-      cameras: [
-        { type: "picture-entity", entity: "", name: "", camera_view: "auto", fit_mode: "cover" },
-      ],
-    };
+    return { columns: 2, square: false, cameras: [{ type: "picture-entity", entity: "", camera_view: "auto" }] };
   }
 
-  set hass(hass) {
-    this._hass = hass;
-    if (this._generatedCard) this._generatedCard.hass = hass;
-  }
+  set hass(hass) { this._hass = hass; if (this._generatedCard) this._generatedCard.hass = hass; }
 
   setConfig(config) {
     if (!config) throw new Error("Konfiguration fehlt.");
-    this._config = {
-      columns: 2,
-      square: false,
-      aspect_ratio: "16:9",
-      cameras: [],
-      ...JSON.parse(JSON.stringify(config)),
-    };
+    this._config = { columns: 2, square: false, cameras: [], ...JSON.parse(JSON.stringify(config)) };
     if (!Array.isArray(this._config.cameras)) this._config.cameras = [];
     this._buildCard();
   }
 
   getCardSize() {
-    const count = this._config.cameras?.length || 0;
     const cols = Math.max(1, this._config.columns || 2);
-    return Math.max(2, Math.ceil(count / cols) * 3);
+    return Math.max(2, Math.ceil((this._config.cameras?.length || 0) / cols) * 3);
   }
 
   async _buildCard() {
@@ -69,84 +42,61 @@ class CameraGridCard extends HTMLElement {
     if (!this.shadowRoot) return;
     this.shadowRoot.innerHTML = "<div id='host'></div>";
     const host = this.shadowRoot.getElementById("host");
-
     try {
-      if (typeof window.loadCardHelpers !== "function") {
-        throw new Error("Card Helpers nicht verfügbar.");
-      }
+      if (typeof window.loadCardHelpers !== "function") throw new Error("Card Helpers nicht verfügbar.");
       const helpers = await window.loadCardHelpers();
       if (token !== this._renderToken) return;
-
-      const gridConfig = this._buildGridConfig();
-      const card = await helpers.createCardElement(gridConfig);
+      const card = await helpers.createCardElement(this._buildGridConfig());
       if (token !== this._renderToken) return;
-
       host.replaceChildren(card);
       this._generatedCard = card;
       if (this._hass) card.hass = this._hass;
     } catch (e) {
       console.error("camera-grid-card:", e);
-      host.innerHTML = `<div style="padding:16px;color:var(--error-color);">
-        <strong>Camera Grid Card Fehler:</strong><br>${e.message}</div>`;
+      host.innerHTML = `<div style="padding:16px;color:var(--error-color);"><strong>Fehler:</strong><br>${e.message}</div>`;
     }
   }
 
   _buildGridConfig() {
-    const cards = this._config.cameras.map((cam) => this._buildCameraEntry(cam)).filter(Boolean);
     return {
       type: "grid",
       columns: this._config.columns || 2,
       square: this._config.square || false,
-      cards,
+      cards: this._config.cameras.map((cam) => this._buildEntry(cam)).filter(Boolean),
     };
   }
 
-  _buildCameraEntry(cam) {
-    // If this camera has conditional_cards, build a vertical-stack of conditionals
+  _buildEntry(cam) {
+    // conditional_cards: multiple cards with their own conditions in a vertical-stack
     if (cam.conditional_cards && cam.conditional_cards.length > 0) {
-      const innerCards = cam.conditional_cards.map((cc) => {
-        const innerCard = this._buildSingleCamera(cc);
-        if (cc.conditions && cc.conditions.length > 0) {
-          return { type: "conditional", conditions: cc.conditions, card: innerCard };
-        }
-        return innerCard;
-      });
-      return { type: "vertical-stack", cards: innerCards };
+      return {
+        type: "vertical-stack",
+        cards: cam.conditional_cards.map((cc) => {
+          const inner = this._buildSingle(cc);
+          return cc.conditions?.length ? { type: "conditional", conditions: cc.conditions, card: inner } : inner;
+        }),
+      };
     }
 
-    // Build the base camera card
-    const card = this._buildSingleCamera(cam);
+    let card = this._buildSingle(cam);
 
-    // Wrap with conditions if present
-    let result = card;
-    if (cam.conditions && cam.conditions.length > 0) {
-      result = { type: "conditional", conditions: cam.conditions, card };
+    // Wrap with overlays (photo/video markdown links)
+    if (cam.overlays?.length > 0) {
+      card = { type: "vertical-stack", cards: [card, ...cam.overlays] };
     }
 
-    // Wrap with overlays if present
-    if (cam.overlays && cam.overlays.length > 0) {
-      const overlayCards = cam.overlays.map((o) => this._buildOverlay(o));
-      if (result.type === "conditional") {
-        // Put overlay inside the conditional card as vertical-stack
-        result.card = { type: "vertical-stack", cards: [card, ...overlayCards] };
-      } else {
-        result = { type: "vertical-stack", cards: [result, ...overlayCards] };
-      }
+    // Wrap with conditions
+    if (cam.conditions?.length > 0) {
+      card = { type: "conditional", conditions: cam.conditions, card };
     }
 
-    return result;
+    return card;
   }
 
-  _buildSingleCamera(cam) {
-    const globalAspect = this._config.aspect_ratio || "16:9";
-
+  _buildSingle(cam) {
     switch (cam.type) {
       case "webrtc":
-        return {
-          type: "custom:webrtc-camera",
-          entity: cam.entity,
-          ...(cam.url ? { url: cam.url } : {}),
-        };
+        return { type: "custom:webrtc-camera", entity: cam.entity, ...(cam.url ? { url: cam.url } : {}) };
 
       case "picture-entity":
         return {
@@ -156,127 +106,79 @@ class CameraGridCard extends HTMLElement {
           show_name: false,
           camera_view: cam.camera_view || "auto",
           fit_mode: cam.fit_mode || "cover",
-          aspect_ratio: cam.aspect_ratio || globalAspect,
           ...(cam.camera_image ? { camera_image: cam.camera_image } : {}),
           ...(cam.image ? { image: cam.image } : {}),
           ...(cam.tap_action ? { tap_action: cam.tap_action } : {}),
           ...(cam.hold_action ? { hold_action: cam.hold_action } : {}),
+          // Force 16:9 via card_mod
+          card_mod: { style: "ha-card { aspect-ratio: 16/9; overflow: hidden; } img, video { object-fit: cover; width: 100%; height: 100%; }" },
         };
 
       case "picture-elements":
-        return this._buildPTZCard(cam);
+        return this._buildPTZ(cam);
 
       default:
-        return { type: "markdown", content: `Unbekannter Kameratyp: ${cam.type}` };
+        return { type: "markdown", content: `Unbekannter Typ: ${cam.type}` };
     }
   }
 
-  _buildPTZCard(cam) {
-    const globalAspect = this._config.aspect_ratio || "16:9";
+  _buildPTZ(cam) {
     const elements = [];
+    const S = { background: "rgba(255,255,255,1)", color: "rgba(0,0,0,1)" };
 
     if (cam.ptz) {
-      const ptz = cam.ptz;
-      const btnStyle = { background: "rgba(255,255,255,1)", color: "rgba(0,0,0,1)" };
+      const p = cam.ptz;
 
-      // D-Pad: positioned bottom-right as a cross pattern
-      // Center of cross: bottom:25px, right:25px
-      if (ptz.up) {
-        elements.push({
-          type: "icon", icon: "mdi:arrow-up",
-          style: { ...btnStyle, bottom: "50px", right: "25px" },
-          tap_action: { action: "call-service", service: ptz.up },
-        });
-      }
-      if (ptz.down) {
-        elements.push({
-          type: "icon", icon: "mdi:arrow-down",
-          style: { ...btnStyle, bottom: "0px", right: "25px" },
-          tap_action: { action: "call-service", service: ptz.down },
-        });
-      }
-      if (ptz.left) {
-        elements.push({
-          type: "icon", icon: "mdi:arrow-left",
-          style: { ...btnStyle, bottom: "25px", right: "50px" },
-          tap_action: { action: "call-service", service: ptz.left },
-        });
-      }
-      if (ptz.right) {
-        elements.push({
-          type: "icon", icon: "mdi:arrow-right",
-          style: { ...btnStyle, bottom: "25px", right: "0px" },
-          tap_action: { action: "call-service", service: ptz.right },
-        });
-      }
+      // D-Pad: cross pattern, bottom-right corner
+      if (p.up) elements.push({ type: "icon", icon: "mdi:arrow-up", style: { ...S, bottom: "50px", right: "25px" }, tap_action: { action: "call-service", service: p.up } });
+      if (p.down) elements.push({ type: "icon", icon: "mdi:arrow-down", style: { ...S, bottom: "0px", right: "25px" }, tap_action: { action: "call-service", service: p.down } });
+      if (p.left) elements.push({ type: "icon", icon: "mdi:arrow-left", style: { ...S, bottom: "25px", right: "50px" }, tap_action: { action: "call-service", service: p.left } });
+      if (p.right) elements.push({ type: "icon", icon: "mdi:arrow-right", style: { ...S, bottom: "25px", right: "0px" }, tap_action: { action: "call-service", service: p.right } });
 
-      // Fullscreen: center of the D-Pad
+      // Fullscreen: center of the D-Pad cross
       if (cam.entity) {
-        elements.push({
-          type: "icon", icon: "mdi:fullscreen",
-          entity: cam.entity,
-          style: { ...btnStyle, bottom: "25px", right: "25px" },
-          tap_action: { action: "more-info" },
-        });
+        elements.push({ type: "icon", icon: "mdi:fullscreen", entity: cam.entity, style: { ...S, bottom: "25px", right: "25px" }, tap_action: { action: "more-info" } });
       }
 
-      // Zoom: bottom-left
-      if (ptz.zoom_in) {
-        elements.push({
-          type: "icon", icon: "mdi:plus",
-          style: { ...btnStyle, bottom: "25px", left: "25px" },
-          tap_action: { action: "call-service", service: ptz.zoom_in },
-        });
-      }
-      if (ptz.zoom_out) {
-        elements.push({
-          type: "icon", icon: "mdi:minus",
-          style: { ...btnStyle, bottom: "0px", left: "25px" },
-          tap_action: { action: "call-service", service: ptz.zoom_out },
-        });
-      }
+      // Zoom: bottom-left, stacked vertically
+      if (p.zoom_in) elements.push({ type: "icon", icon: "mdi:plus", style: { ...S, bottom: "25px", left: "25px" }, tap_action: { action: "call-service", service: p.zoom_in } });
+      if (p.zoom_out) elements.push({ type: "icon", icon: "mdi:minus", style: { ...S, bottom: "0px", left: "25px" }, tap_action: { action: "call-service", service: p.zoom_out } });
 
-      // Presets: positioned along the bottom row and second row next to D-Pad
-      if (ptz.presets && Array.isArray(ptz.presets)) {
-        ptz.presets.forEach((preset, index) => {
-          // Layout: presets go bottom-right, stacking up and to the left of D-Pad arrows
-          // Row 0: bottom: 0px, Row 1: bottom: 50px
-          // Col 0: right: 50px, Col 1: right: 0px
-          const row = Math.floor(index / 2);
-          const col = index % 2;
-          elements.push({
-            type: "icon",
-            icon: `mdi:numeric-${index + 1}`,
-            style: { ...btnStyle, bottom: `${row * 50}px`, right: `${col * 25 + 50}px` },
-            tap_action: { action: "call-service", service: preset.service },
-          });
+      // Presets: placed at the 4 corners of the D-Pad cross (the diagonal positions)
+      // Corner positions: top-right, top-left, bottom-left, bottom-right of the D-Pad
+      // D-Pad center is at bottom:25px, right:25px
+      // Corners: (bottom:50px, right:0px), (bottom:50px, right:50px), (bottom:0px, right:50px), (bottom:0px, right:0px)
+      const presetPositions = [
+        { bottom: "0px", right: "50px" },   // Preset 1: bottom-left of D-Pad
+        { bottom: "0px", right: "0px" },    // Preset 2: bottom-right of D-Pad
+        { bottom: "50px", right: "50px" },  // Preset 3: top-left of D-Pad
+        { bottom: "50px", right: "0px" },   // Preset 4: top-right of D-Pad
+      ];
+
+      if (p.presets?.length > 0) {
+        p.presets.forEach((preset, i) => {
+          if (i < presetPositions.length) {
+            elements.push({
+              type: "icon",
+              icon: `mdi:numeric-${i + 1}`,
+              style: { ...S, ...presetPositions[i] },
+              tap_action: { action: "call-service", service: preset.service },
+            });
+          }
         });
       }
     }
 
     // Raw elements pass-through
-    if (cam.elements && Array.isArray(cam.elements)) {
-      elements.push(...cam.elements);
-    }
+    if (cam.elements?.length > 0) elements.push(...cam.elements);
 
     return {
       type: "picture-elements",
       camera_image: cam.camera_image || cam.entity,
       camera_view: cam.camera_view || "live",
-      aspect_ratio: cam.aspect_ratio || globalAspect,
+      aspect_ratio: "16:9",
       elements,
     };
-  }
-
-  _buildOverlay(overlay) {
-    if (overlay.type === "markdown") {
-      return {
-        type: "markdown",
-        content: overlay.content || "",
-        ...(overlay.card_mod ? { card_mod: overlay.card_mod } : {}),
-      };
-    }
-    return overlay;
   }
 }
 
@@ -293,10 +195,7 @@ class CameraGridCardEditor extends HTMLElement {
 
   set hass(hass) {
     this._hass = hass;
-    if (this._rendered) {
-      this.shadowRoot?.querySelectorAll("ha-form").forEach((f) => { f.hass = hass; });
-      return;
-    }
+    if (this._rendered) { this.shadowRoot?.querySelectorAll("ha-form").forEach((f) => { f.hass = hass; }); return; }
     if (this._config && Object.keys(this._config).length) this._render();
   }
 
@@ -304,10 +203,7 @@ class CameraGridCardEditor extends HTMLElement {
     const next = JSON.parse(JSON.stringify(config || {}));
     if (!Array.isArray(next.cameras)) next.cameras = [];
     const hash = JSON.stringify(next);
-    if (this._emittedHashes.has(hash) && this._rendered) {
-      this._emittedHashes.delete(hash);
-      return;
-    }
+    if (this._emittedHashes.has(hash) && this._rendered) { this._emittedHashes.delete(hash); return; }
     this._config = next;
     this._render();
   }
@@ -316,24 +212,19 @@ class CameraGridCardEditor extends HTMLElement {
     const config = JSON.parse(JSON.stringify(this._config));
     const hash = JSON.stringify(config);
     this._emittedHashes.add(hash);
-    while (this._emittedHashes.size > 30) {
-      this._emittedHashes.delete(this._emittedHashes.values().next().value);
-    }
-    this.dispatchEvent(new CustomEvent("config-changed", {
-      detail: { config }, bubbles: true, composed: true,
-    }));
+    while (this._emittedHashes.size > 30) this._emittedHashes.delete(this._emittedHashes.values().next().value);
+    this.dispatchEvent(new CustomEvent("config-changed", { detail: { config }, bubbles: true, composed: true }));
   }
 
   _globalSchema() {
     return [
       { name: "columns", selector: { number: { min: 1, max: 4, step: 1, mode: "box" } } },
       { name: "square", selector: { boolean: {} } },
-      { name: "aspect_ratio", selector: { text: {} } },
     ];
   }
 
   _cameraSchema(cam) {
-    const schema = [
+    const s = [
       { name: "type", selector: { select: { options: [
         { value: "webrtc", label: "WebRTC" },
         { value: "picture-entity", label: "Picture Entity" },
@@ -341,100 +232,78 @@ class CameraGridCardEditor extends HTMLElement {
       ] } } },
       { name: "entity", selector: { entity: { filter: [{ domain: "camera" }] } } },
       { name: "name", selector: { text: {} } },
-      { name: "aspect_ratio", selector: { text: {} } },
     ];
-
     if (cam.type === "picture-entity" || cam.type === "picture-elements") {
-      schema.push({ name: "camera_view", selector: { select: { options: [
-        { value: "auto", label: "Auto" },
-        { value: "live", label: "Live" },
-      ] } } });
+      s.push({ name: "camera_view", selector: { select: { options: [{ value: "auto", label: "Auto" }, { value: "live", label: "Live" }] } } });
     }
-
     if (cam.type === "picture-entity") {
-      schema.push({ name: "fit_mode", selector: { select: { options: [
-        { value: "cover", label: "Cover" },
-        { value: "contain", label: "Contain" },
-        { value: "fill", label: "Fill" },
-      ] } } });
-      schema.push({ name: "image", selector: { text: {} } });
+      s.push({ name: "fit_mode", selector: { select: { options: [{ value: "cover", label: "Cover" }, { value: "contain", label: "Contain" }, { value: "fill", label: "Fill" }] } } });
+      s.push({ name: "image", selector: { text: {} } });
     }
-
     if (cam.type === "picture-elements") {
-      schema.push({ name: "ptz_up", selector: { text: {} } });
-      schema.push({ name: "ptz_down", selector: { text: {} } });
-      schema.push({ name: "ptz_left", selector: { text: {} } });
-      schema.push({ name: "ptz_right", selector: { text: {} } });
-      schema.push({ name: "ptz_zoom_in", selector: { text: {} } });
-      schema.push({ name: "ptz_zoom_out", selector: { text: {} } });
-      schema.push({ name: "presets_yaml", selector: { text: { multiline: true } } });
+      s.push({ name: "ptz_up", selector: { text: {} } });
+      s.push({ name: "ptz_down", selector: { text: {} } });
+      s.push({ name: "ptz_left", selector: { text: {} } });
+      s.push({ name: "ptz_right", selector: { text: {} } });
+      s.push({ name: "ptz_zoom_in", selector: { text: {} } });
+      s.push({ name: "ptz_zoom_out", selector: { text: {} } });
     }
+    if (cam.type === "webrtc") s.push({ name: "url", selector: { text: {} } });
+    return s;
+  }
 
-    if (cam.type === "webrtc") {
-      schema.push({ name: "url", selector: { text: {} } });
-    }
-
-    return schema;
+  _presetSchema() {
+    return [
+      { name: "service", selector: { text: {} } },
+    ];
   }
 
   _label(schema) {
-    const labels = {
-      columns: "Spalten",
-      square: "Quadratisch",
-      aspect_ratio: "Seitenverhältnis (z.B. 16:9)",
-      type: "Kameratyp",
-      entity: "Kamera-Entität",
-      name: "Name",
-      camera_view: "Ansicht",
-      fit_mode: "Bildanpassung",
-      image: "Platzhalterbild (URL)",
-      url: "Stream-URL",
-      ptz_up: "PTZ Hoch (Service)",
-      ptz_down: "PTZ Runter (Service)",
-      ptz_left: "PTZ Links (Service)",
-      ptz_right: "PTZ Rechts (Service)",
-      ptz_zoom_in: "PTZ Zoom+ (Service)",
-      ptz_zoom_out: "PTZ Zoom- (Service)",
-      presets_yaml: "Presets (je Zeile: - service: ...)",
-    };
-    return labels[schema.name] || schema.name;
+    const l = { columns: "Spalten", square: "Quadratisch", type: "Kameratyp", entity: "Kamera-Entität", name: "Name",
+      camera_view: "Ansicht", fit_mode: "Bildanpassung", image: "Platzhalterbild", url: "Stream-URL",
+      ptz_up: "PTZ Hoch (script/service)", ptz_down: "PTZ Runter", ptz_left: "PTZ Links", ptz_right: "PTZ Rechts",
+      ptz_zoom_in: "PTZ Zoom+", ptz_zoom_out: "PTZ Zoom-", service: "Service (z.B. rest_command.xyz)" };
+    return l[schema.name] || schema.name;
   }
 
   _addCamera() {
     this._config.cameras.push({ type: "picture-entity", entity: "", name: "", camera_view: "auto", fit_mode: "cover" });
     this._openKeys.add(`cam:${this._config.cameras.length - 1}`);
-    this._fire();
-    this._render();
+    this._fire(); this._render();
   }
-
-  _removeCamera(index) { this._config.cameras.splice(index, 1); this._fire(); this._render(); }
-
-  _moveCamera(index, direction) {
-    const target = index + direction;
-    const cams = this._config.cameras;
-    if (target < 0 || target >= cams.length) return;
-    [cams[index], cams[target]] = [cams[target], cams[index]];
+  _removeCamera(i) { this._config.cameras.splice(i, 1); this._fire(); this._render(); }
+  _moveCamera(i, d) {
+    const t = i + d; const c = this._config.cameras;
+    if (t < 0 || t >= c.length) return;
+    [c[i], c[t]] = [c[t], c[i]]; this._fire(); this._render();
+  }
+  _addPreset(camIdx) {
+    const cam = this._config.cameras[camIdx];
+    if (!cam.ptz) cam.ptz = {};
+    if (!cam.ptz.presets) cam.ptz.presets = [];
+    if (cam.ptz.presets.length >= 4) return; // max 4 presets (4 corners)
+    cam.ptz.presets.push({ service: "" });
+    this._fire(); this._render();
+  }
+  _removePreset(camIdx, presetIdx) {
+    this._config.cameras[camIdx].ptz.presets.splice(presetIdx, 1);
     this._fire(); this._render();
   }
 
   _flattenCam(cam) {
     const flat = { ...cam };
     if (cam.ptz) {
-      flat.ptz_up = cam.ptz.up || "";
-      flat.ptz_down = cam.ptz.down || "";
-      flat.ptz_left = cam.ptz.left || "";
-      flat.ptz_right = cam.ptz.right || "";
-      flat.ptz_zoom_in = cam.ptz.zoom_in || "";
-      flat.ptz_zoom_out = cam.ptz.zoom_out || "";
-      if (cam.ptz.presets) flat.presets_yaml = cam.ptz.presets.map((p) => `- service: ${p.service}`).join("\n");
+      flat.ptz_up = cam.ptz.up || ""; flat.ptz_down = cam.ptz.down || "";
+      flat.ptz_left = cam.ptz.left || ""; flat.ptz_right = cam.ptz.right || "";
+      flat.ptz_zoom_in = cam.ptz.zoom_in || ""; flat.ptz_zoom_out = cam.ptz.zoom_out || "";
       delete flat.ptz;
     }
     return flat;
   }
-
-  _recomposeCam(flat) {
+  _recomposeCam(flat, camIdx) {
     const cam = { ...flat };
     if (cam.type === "picture-elements") {
+      const oldPresets = this._config.cameras[camIdx]?.ptz?.presets || [];
       cam.ptz = {};
       if (cam.ptz_up) cam.ptz.up = cam.ptz_up;
       if (cam.ptz_down) cam.ptz.down = cam.ptz_down;
@@ -442,84 +311,108 @@ class CameraGridCardEditor extends HTMLElement {
       if (cam.ptz_right) cam.ptz.right = cam.ptz_right;
       if (cam.ptz_zoom_in) cam.ptz.zoom_in = cam.ptz_zoom_in;
       if (cam.ptz_zoom_out) cam.ptz.zoom_out = cam.ptz_zoom_out;
-      if (cam.presets_yaml) {
-        const lines = cam.presets_yaml.split("\n").filter((l) => l.trim());
-        cam.ptz.presets = lines.map((l) => {
-          const m = l.match(/service:\s*(.+)/);
-          return m ? { service: m[1].trim() } : null;
-        }).filter(Boolean);
-      }
+      cam.ptz.presets = oldPresets; // preserve presets (edited separately)
     }
     delete cam.ptz_up; delete cam.ptz_down; delete cam.ptz_left; delete cam.ptz_right;
-    delete cam.ptz_zoom_in; delete cam.ptz_zoom_out; delete cam.presets_yaml;
+    delete cam.ptz_zoom_in; delete cam.ptz_zoom_out;
     return cam;
   }
 
   _render() {
     if (!this.shadowRoot) return;
     const cameras = this._config.cameras || [];
-
     this.shadowRoot.innerHTML = `
       <style>
         :host { display: block; }
         .editor { display: flex; flex-direction: column; gap: 16px; }
         .block { border: 1px solid var(--divider-color); border-radius: 12px; padding: 12px; background: var(--card-background-color); }
         details { border: 1px solid var(--divider-color); border-radius: 10px; margin: 6px 0; overflow: hidden; }
-        summary { cursor: pointer; padding: 10px 12px; font-weight: 500; background: var(--secondary-background-color); display: flex; align-items: center; gap: 8px; list-style: none; }
+        summary { cursor: pointer; padding: 10px 12px; font-weight: 500; background: var(--secondary-background-color); list-style: none; }
         summary::-webkit-details-marker { display: none; }
         .cam-body { padding: 10px 12px; }
-        .cam-actions { display: flex; gap: 6px; margin-top: 8px; flex-wrap: wrap; }
+        .actions { display: flex; gap: 6px; margin-top: 8px; flex-wrap: wrap; }
         button { border: 1px solid var(--divider-color); background: var(--secondary-background-color); color: var(--primary-text-color); border-radius: 8px; min-height: 34px; padding: 0 10px; cursor: pointer; font: inherit; font-size: 0.85rem; }
         button.primary { background: var(--primary-color); color: var(--text-primary-color, white); border-color: var(--primary-color); }
         button.danger { color: var(--error-color); }
         button:disabled { opacity: 0.4; cursor: default; }
         h3 { margin: 0 0 12px; font-size: 1rem; }
+        .preset-row { display: flex; align-items: center; gap: 8px; margin: 4px 0; }
+        .preset-row span { min-width: 70px; font-weight: 500; font-size: 0.85rem; }
+        .preset-label { font-size: 0.85rem; font-weight: 600; margin-top: 12px; margin-bottom: 4px; }
       </style>
       <div class="editor">
         <div class="block"><h3>Allgemein</h3><div id="global-form"></div></div>
         <div class="block"><h3>Kameras</h3><div id="cameras"></div>
-          <button class="primary" id="add-cam" type="button">+ Kamera hinzufügen</button>
-        </div>
-      </div>
-    `;
+          <button class="primary" id="add-cam" type="button">+ Kamera hinzufügen</button></div>
+      </div>`;
 
-    const globalHost = this.shadowRoot.getElementById("global-form");
-    const globalForm = document.createElement("ha-form");
-    globalForm.hass = this._hass;
-    globalForm.data = { columns: this._config.columns || 2, square: this._config.square || false, aspect_ratio: this._config.aspect_ratio || "16:9" };
-    globalForm.schema = this._globalSchema();
-    globalForm.computeLabel = (s) => this._label(s);
-    globalForm.addEventListener("value-changed", (e) => { this._config = { ...this._config, ...(e.detail?.value || {}) }; this._fire(); });
-    globalHost.appendChild(globalForm);
+    // Global
+    const gf = document.createElement("ha-form");
+    gf.hass = this._hass;
+    gf.data = { columns: this._config.columns || 2, square: this._config.square || false };
+    gf.schema = this._globalSchema();
+    gf.computeLabel = (s) => this._label(s);
+    gf.addEventListener("value-changed", (e) => { this._config = { ...this._config, ...(e.detail?.value || {}) }; this._fire(); });
+    this.shadowRoot.getElementById("global-form").appendChild(gf);
 
+    // Cameras
     const camHost = this.shadowRoot.getElementById("cameras");
-    cameras.forEach((cam, index) => {
-      const key = `cam:${index}`;
-      const isOpen = this._openKeys.has(key);
-      const label = cam.name || cam.entity || cam.type || `Kamera ${index + 1}`;
-      const details = document.createElement("details");
-      details.dataset.openKey = key;
-      details.open = isOpen;
-      details.innerHTML = `<summary>${label}</summary><div class="cam-body"><div class="form-host"></div>
-        <div class="cam-actions">
-          <button type="button" data-action="up" ${index === 0 ? "disabled" : ""}>&#8593;</button>
-          <button type="button" data-action="down" ${index === cameras.length - 1 ? "disabled" : ""}>&#8595;</button>
+    cameras.forEach((cam, idx) => {
+      const key = `cam:${idx}`;
+      const label = cam.name || cam.entity || cam.type || `Kamera ${idx + 1}`;
+      const det = document.createElement("details");
+      det.open = this._openKeys.has(key);
+      det.addEventListener("toggle", () => { if (det.open) this._openKeys.add(key); else this._openKeys.delete(key); });
+
+      let presetsHtml = "";
+      if (cam.type === "picture-elements" && cam.ptz?.presets?.length > 0) {
+        presetsHtml = `<div class="preset-label">Presets (max. 4, an den Ecken des Steuerkreuzes):</div>`;
+        cam.ptz.presets.forEach((pr, pi) => {
+          presetsHtml += `<div class="preset-row"><span>Preset ${pi + 1}:</span>
+            <input type="text" value="${(pr.service || "").replace(/"/g, "&quot;")}" data-cam="${idx}" data-preset="${pi}" style="flex:1;padding:6px;border-radius:6px;border:1px solid var(--divider-color);background:var(--secondary-background-color);color:var(--primary-text-color);font:inherit;font-size:0.85rem;" />
+            <button type="button" class="danger" data-action="rm-preset" data-cam="${idx}" data-preset="${pi}">×</button></div>`;
+        });
+      }
+      const canAddPreset = cam.type === "picture-elements" && (!cam.ptz?.presets || cam.ptz.presets.length < 4);
+
+      det.innerHTML = `<summary>${label}</summary><div class="cam-body"><div class="form-host"></div>
+        ${presetsHtml}
+        ${canAddPreset ? `<button type="button" data-action="add-preset" data-cam="${idx}" style="margin-top:8px;">+ Preset hinzufügen</button>` : ""}
+        <div class="actions">
+          <button type="button" data-action="up" ${idx === 0 ? "disabled" : ""}>&#8593;</button>
+          <button type="button" data-action="down" ${idx === cameras.length - 1 ? "disabled" : ""}>&#8595;</button>
           <button type="button" class="danger" data-action="remove">Entfernen</button>
         </div></div>`;
-      details.addEventListener("toggle", () => { if (details.open) this._openKeys.add(key); else this._openKeys.delete(key); });
 
+      // Camera form
       const form = document.createElement("ha-form");
       form.hass = this._hass;
       form.data = this._flattenCam(cam);
       form.schema = this._cameraSchema(cam);
       form.computeLabel = (s) => this._label(s);
-      form.addEventListener("value-changed", (e) => { this._config.cameras[index] = this._recomposeCam(e.detail?.value || {}); this._fire(); });
-      details.querySelector(".form-host").appendChild(form);
+      form.addEventListener("value-changed", (e) => { this._config.cameras[idx] = this._recomposeCam(e.detail?.value || {}, idx); this._fire(); });
+      det.querySelector(".form-host").appendChild(form);
 
-      details.querySelector('[data-action="up"]')?.addEventListener("click", () => this._moveCamera(index, -1));
-      details.querySelector('[data-action="down"]')?.addEventListener("click", () => this._moveCamera(index, 1));
-      details.querySelector('[data-action="remove"]')?.addEventListener("click", () => this._removeCamera(index));
-      camHost.appendChild(details);
+      // Preset inputs
+      det.querySelectorAll("input[data-preset]").forEach((input) => {
+        input.addEventListener("change", (e) => {
+          const ci = parseInt(e.target.dataset.cam, 10);
+          const pi = parseInt(e.target.dataset.preset, 10);
+          this._config.cameras[ci].ptz.presets[pi].service = e.target.value;
+          this._fire();
+        });
+      });
+
+      det.querySelectorAll('[data-action="rm-preset"]').forEach((btn) => {
+        btn.addEventListener("click", (e) => { this._removePreset(parseInt(e.target.dataset.cam, 10), parseInt(e.target.dataset.preset, 10)); });
+      });
+
+      det.querySelector('[data-action="add-preset"]')?.addEventListener("click", (e) => { this._addPreset(parseInt(e.target.dataset.cam, 10)); });
+      det.querySelector('[data-action="up"]')?.addEventListener("click", () => this._moveCamera(idx, -1));
+      det.querySelector('[data-action="down"]')?.addEventListener("click", () => this._moveCamera(idx, 1));
+      det.querySelector('[data-action="remove"]')?.addEventListener("click", () => this._removeCamera(idx));
+
+      camHost.appendChild(det);
     });
 
     this.shadowRoot.getElementById("add-cam")?.addEventListener("click", () => this._addCamera());
@@ -530,19 +423,9 @@ class CameraGridCardEditor extends HTMLElement {
 // --- Registration ---
 if (!customElements.get("camera-grid-card")) customElements.define("camera-grid-card", CameraGridCard);
 if (!customElements.get("camera-grid-card-editor")) customElements.define("camera-grid-card-editor", CameraGridCardEditor);
-
 window.customCards = window.customCards || [];
 if (!window.customCards.some((c) => c.type === "camera-grid-card")) {
-  window.customCards.push({
-    type: "camera-grid-card",
-    name: "Camera Grid Card",
-    description: "Konfigurierbares Kamera-Grid mit WebRTC, Picture-Entity, PTZ-Steuerung, bedingter Sichtbarkeit und Overlays.",
-    preview: true,
-  });
+  window.customCards.push({ type: "camera-grid-card", name: "Camera Grid Card",
+    description: "Konfigurierbares Kamera-Grid mit WebRTC, Picture-Entity, PTZ und Presets.", preview: true });
 }
-
-console.info(
-  `%c CAMERA-GRID-CARD %c v${CAMERA_GRID_CARD_VERSION} `,
-  "color:white;background:#ff5722;font-weight:bold",
-  "color:#ff5722;background:white;font-weight:bold"
-);
+console.info(`%c CAMERA-GRID-CARD %c v${CAMERA_GRID_CARD_VERSION} `, "color:white;background:#ff5722;font-weight:bold", "color:#ff5722;background:white;font-weight:bold");
