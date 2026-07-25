@@ -160,36 +160,18 @@ class RoomDetailCard extends HTMLElement {
   }
 
   _isInEditMode() {
-    // Method 1: Check if any HA dialog/editor overlay is currently OPEN
-    // HA renders dialogs inside home-assistant's shadow root and may keep them in DOM when closed
+    // Only hide the back button when the card EDITOR dialog is open,
+    // not for more-info dialogs or other overlays.
+
+    // Method 1: Check inside home-assistant shadow root for the card editor dialog
     try {
       const haRoot = document.querySelector("home-assistant")?.shadowRoot;
       if (haRoot) {
-        const dialogs = haRoot.querySelectorAll("ha-dialog, hui-dialog-edit-card, ha-more-info-dialog");
-        for (const dialog of dialogs) {
-          // ha-dialog uses the "open" attribute or the "_opened" property
-          if (
-            dialog.hasAttribute("open") ||
-            dialog.open === true ||
-            dialog._opened === true ||
-            dialog.getAttribute("aria-hidden") !== "true"
-          ) {
-            // Double check: if it has display:none or visibility:hidden, it's not really open
-            const style = window.getComputedStyle(dialog);
-            if (style.display !== "none" && style.visibility !== "hidden") {
-              return true;
-            }
-          }
-        }
-      }
-    } catch (_) {}
-
-    // Method 2: Check if a dialog exists directly in the document (some HA versions)
-    try {
-      const dialogs = document.querySelectorAll("ha-dialog, mwc-dialog");
-      for (const dialog of dialogs) {
-        if (dialog.hasAttribute("open") || dialog.open === true) {
-          const style = window.getComputedStyle(dialog);
+        // hui-dialog-edit-card is the specific card editor dialog
+        const editDialog = haRoot.querySelector("hui-dialog-edit-card");
+        if (editDialog) {
+          // Check if it's actually visible/open
+          const style = window.getComputedStyle(editDialog);
           if (style.display !== "none" && style.visibility !== "hidden") {
             return true;
           }
@@ -197,7 +179,7 @@ class RoomDetailCard extends HTMLElement {
       }
     } catch (_) {}
 
-    // Method 3: Traverse up through both light DOM and shadow DOM boundaries
+    // Method 2: Traverse up — if this card instance lives inside an editor preview
     let node = this;
     for (let i = 0; i < 100 && node; i++) {
       const tag = node.tagName?.toLowerCase?.() || "";
@@ -205,18 +187,14 @@ class RoomDetailCard extends HTMLElement {
         tag === "hui-card-preview" ||
         tag === "hui-card-options" ||
         tag === "hui-card-editor" ||
-        tag === "hui-dialog-edit-card" ||
-        tag === "dialog" ||
-        tag === "ha-dialog"
+        tag === "hui-dialog-edit-card"
       ) {
         return true;
       }
 
-      // Try parentElement first (light DOM)
       if (node.parentElement) {
         node = node.parentElement;
       } else {
-        // Cross shadow boundary: go to the host of the shadow root
         const root = node.getRootNode();
         if (root && root !== node && root !== document) {
           node = root.host || null;
