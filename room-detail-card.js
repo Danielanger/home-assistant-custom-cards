@@ -1,4 +1,4 @@
-const ROOM_DETAIL_CARD_VERSION = "1.0.3";
+const ROOM_DETAIL_CARD_VERSION = "1.0.4";
 
 const clone = (value) => {
   if (typeof structuredClone === "function") {
@@ -120,25 +120,102 @@ class RoomDetailCard extends HTMLElement {
     return Math.max(3, itemCount + 4);
   }
 
+  connectedCallback() {
+    // Delay the check — HA may not have finished building the DOM hierarchy yet
+    requestAnimationFrame(() => {
+      requestAnimationFrame(() => {
+        this._updateBackButtonVisibility();
+      });
+    });
+
+    // Listen for HA dialog open/close to hide the button when a dialog is active
+    this._dialogObserver = new MutationObserver(() => {
+      this._updateBackButtonVisibility();
+    });
+
+    // Observe the document body for dialog elements being added/removed
+    this._dialogObserver.observe(document.body, { childList: true, subtree: false });
+
+    // Also observe inside home-assistant shadow root where HA renders dialogs
+    try {
+      const haRoot = document.querySelector("home-assistant")?.shadowRoot;
+      if (haRoot) {
+        this._haRootObserver = new MutationObserver(() => {
+          this._updateBackButtonVisibility();
+        });
+        this._haRootObserver.observe(haRoot, { childList: true, subtree: false });
+      }
+    } catch (_) {}
+  }
+
+  disconnectedCallback() {
+    if (this._dialogObserver) {
+      this._dialogObserver.disconnect();
+      this._dialogObserver = null;
+    }
+    if (this._haRootObserver) {
+      this._haRootObserver.disconnect();
+      this._haRootObserver = null;
+    }
+  }
+
   _isInEditMode() {
-    // Check if the card is rendered inside the HA card editor/preview
-    let el = this;
-    while (el) {
+    // Method 1: Check if any HA dialog/editor overlay is currently open
+    // HA renders dialogs inside home-assistant's shadow root
+    try {
+      const haRoot = document.querySelector("home-assistant")?.shadowRoot;
+      if (haRoot) {
+        const dialog = haRoot.querySelector("ha-dialog, hui-dialog-edit-card, ha-more-info-dialog");
+        if (dialog) return true;
+      }
+    } catch (_) {}
+
+    // Method 2: Check if a dialog exists directly in the document (some HA versions)
+    if (document.querySelector("ha-dialog, mwc-dialog")) return true;
+
+    // Method 3: Traverse up through both light DOM and shadow DOM boundaries
+    let node = this;
+    for (let i = 0; i < 100 && node; i++) {
+      const tag = node.tagName?.toLowerCase?.() || "";
       if (
-        el.tagName &&
-        (el.tagName.toLowerCase() === "hui-card-preview" ||
-         el.tagName.toLowerCase() === "hui-card-editor" ||
-         el.tagName.toLowerCase() === "hui-card-options")
+        tag === "hui-card-preview" ||
+        tag === "hui-card-options" ||
+        tag === "hui-card-editor" ||
+        tag === "hui-dialog-edit-card" ||
+        tag === "dialog" ||
+        tag === "ha-dialog"
       ) {
         return true;
       }
-      el = el.parentElement || el.getRootNode()?.host;
+
+      // Try parentElement first (light DOM)
+      if (node.parentElement) {
+        node = node.parentElement;
+      } else {
+        // Cross shadow boundary: go to the host of the shadow root
+        const root = node.getRootNode();
+        if (root && root !== node && root !== document) {
+          node = root.host || null;
+        } else {
+          node = null;
+        }
+      }
     }
     return false;
   }
 
+  _updateBackButtonVisibility() {
+    const btn = this.shadowRoot?.querySelector(".back-button");
+    if (!btn) return;
+
+    const shouldHide = this._isInEditMode();
+    const showBack = this._config.show_back_button !== false;
+
+    btn.style.display = shouldHide || !showBack ? "none" : "flex";
+  }
+
   _renderShell() {
-    const showBack = this._config.show_back_button !== false && !this._isInEditMode();
+    const showBack = this._config.show_back_button !== false;
     const backIcon = this._config.back_icon || "mdi:arrow-left";
 
     this.shadowRoot.innerHTML = `
@@ -221,6 +298,11 @@ class RoomDetailCard extends HTMLElement {
     this.shadowRoot
       .querySelector(".back-button")
       ?.addEventListener("click", () => this._goBack());
+
+    // Hide back button if rendered inside editor (may already be connected)
+    if (this.isConnected) {
+      this._updateBackButtonVisibility();
+    }
   }
 
   _goBack() {
