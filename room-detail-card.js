@@ -1,4 +1,4 @@
-const ROOM_DETAIL_CARD_VERSION = "1.0.2";
+const ROOM_DETAIL_CARD_VERSION = "1.0.3";
 
 const clone = (value) => {
   if (typeof structuredClone === "function") {
@@ -120,8 +120,25 @@ class RoomDetailCard extends HTMLElement {
     return Math.max(3, itemCount + 4);
   }
 
+  _isInEditMode() {
+    // Check if the card is rendered inside the HA card editor/preview
+    let el = this;
+    while (el) {
+      if (
+        el.tagName &&
+        (el.tagName.toLowerCase() === "hui-card-preview" ||
+         el.tagName.toLowerCase() === "hui-card-editor" ||
+         el.tagName.toLowerCase() === "hui-card-options")
+      ) {
+        return true;
+      }
+      el = el.parentElement || el.getRootNode()?.host;
+    }
+    return false;
+  }
+
   _renderShell() {
-    const showBack = this._config.show_back_button !== false;
+    const showBack = this._config.show_back_button !== false && !this._isInEditMode();
     const backIcon = this._config.back_icon || "mdi:arrow-left";
 
     this.shadowRoot.innerHTML = `
