@@ -134,7 +134,7 @@ class RoomDetailCard extends HTMLElement {
     });
 
     // Observe the document body for dialog elements being added/removed
-    this._dialogObserver.observe(document.body, { childList: true, subtree: false });
+    this._dialogObserver.observe(document.body, { childList: true, subtree: true, attributes: true, attributeFilter: ["open", "aria-hidden", "style"] });
 
     // Also observe inside home-assistant shadow root where HA renders dialogs
     try {
@@ -143,7 +143,7 @@ class RoomDetailCard extends HTMLElement {
         this._haRootObserver = new MutationObserver(() => {
           this._updateBackButtonVisibility();
         });
-        this._haRootObserver.observe(haRoot, { childList: true, subtree: false });
+        this._haRootObserver.observe(haRoot, { childList: true, subtree: true, attributes: true, attributeFilter: ["open", "aria-hidden", "style"] });
       }
     } catch (_) {}
   }
@@ -160,18 +160,42 @@ class RoomDetailCard extends HTMLElement {
   }
 
   _isInEditMode() {
-    // Method 1: Check if any HA dialog/editor overlay is currently open
-    // HA renders dialogs inside home-assistant's shadow root
+    // Method 1: Check if any HA dialog/editor overlay is currently OPEN
+    // HA renders dialogs inside home-assistant's shadow root and may keep them in DOM when closed
     try {
       const haRoot = document.querySelector("home-assistant")?.shadowRoot;
       if (haRoot) {
-        const dialog = haRoot.querySelector("ha-dialog, hui-dialog-edit-card, ha-more-info-dialog");
-        if (dialog) return true;
+        const dialogs = haRoot.querySelectorAll("ha-dialog, hui-dialog-edit-card, ha-more-info-dialog");
+        for (const dialog of dialogs) {
+          // ha-dialog uses the "open" attribute or the "_opened" property
+          if (
+            dialog.hasAttribute("open") ||
+            dialog.open === true ||
+            dialog._opened === true ||
+            dialog.getAttribute("aria-hidden") !== "true"
+          ) {
+            // Double check: if it has display:none or visibility:hidden, it's not really open
+            const style = window.getComputedStyle(dialog);
+            if (style.display !== "none" && style.visibility !== "hidden") {
+              return true;
+            }
+          }
+        }
       }
     } catch (_) {}
 
     // Method 2: Check if a dialog exists directly in the document (some HA versions)
-    if (document.querySelector("ha-dialog, mwc-dialog")) return true;
+    try {
+      const dialogs = document.querySelectorAll("ha-dialog, mwc-dialog");
+      for (const dialog of dialogs) {
+        if (dialog.hasAttribute("open") || dialog.open === true) {
+          const style = window.getComputedStyle(dialog);
+          if (style.display !== "none" && style.visibility !== "hidden") {
+            return true;
+          }
+        }
+      }
+    } catch (_) {}
 
     // Method 3: Traverse up through both light DOM and shadow DOM boundaries
     let node = this;
