@@ -94,7 +94,7 @@ class CameraGridCard extends HTMLElement {
 
     switch (cam.type) {
       case "webrtc":
-        card = { type: "custom:webrtc-camera", entity: cam.entity, mode: "webrtc", ...(cam.url ? { url: cam.url } : {}) };
+        card = { type: "custom:webrtc-camera", entity: cam.entity, ...(cam.url ? { url: cam.url } : {}) };
         break;
 
       case "picture-elements":
