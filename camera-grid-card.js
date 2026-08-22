@@ -94,7 +94,27 @@ class CameraGridCard extends HTMLElement {
 
     switch (cam.type) {
       case "webrtc":
-        card = { type: "custom:webrtc-camera", entity: cam.entity, ...(cam.url ? { url: cam.url } : {}) };
+        card = { type: "custom:webrtc-camera", entity: cam.entity, mode: "webrtc", ...(cam.url ? { url: cam.url } : {}) };
+        // Add VLC overlay button if configured
+        if (cam.use_vlc && cam.vlc_url) {
+          card = {
+            type: "custom:stack-in-card",
+            mode: "vertical",
+            cards: [
+              card,
+              {
+                type: "custom:mushroom-chips-card",
+                alignment: "end",
+                card_mod: { style: "ha-card { margin-top: -48px; position: relative; z-index: 1; background: none !important; box-shadow: none !important; }" },
+                chips: [{
+                  type: "action",
+                  icon: "mdi:vlc",
+                  tap_action: { action: "url", url_path: cam.vlc_url },
+                }],
+              },
+            ],
+          };
+        }
         break;
 
       case "picture-elements":
@@ -216,8 +236,12 @@ class CameraGridCard extends HTMLElement {
       if (p.down)  elements.push({ type: "icon", icon: "mdi:arrow-down",  style: { ...S, bottom: "0px",  right: "25px" }, tap_action: { action: "call-service", service: p.down } });
       if (p.left)  elements.push({ type: "icon", icon: "mdi:arrow-left",  style: { ...S, bottom: "25px", right: "50px" }, tap_action: { action: "call-service", service: p.left } });
       if (p.right) elements.push({ type: "icon", icon: "mdi:arrow-right", style: { ...S, bottom: "25px", right: "0px"  }, tap_action: { action: "call-service", service: p.right } });
-      // Fullscreen center
-      if (cam.entity) elements.push({ type: "icon", icon: "mdi:fullscreen", entity: cam.entity, style: { ...S, bottom: "25px", right: "25px" }, tap_action: { action: "more-info" } });
+      // Fullscreen center — or VLC if configured
+      if (cam.use_vlc && cam.vlc_url) {
+        elements.push({ type: "icon", icon: "mdi:vlc", style: { ...S, bottom: "25px", right: "25px" }, tap_action: { action: "url", url_path: cam.vlc_url } });
+      } else if (cam.entity) {
+        elements.push({ type: "icon", icon: "mdi:fullscreen", entity: cam.entity, style: { ...S, bottom: "25px", right: "25px" }, tap_action: { action: "more-info" } });
+      }
       // Zoom bottom-left
       if (p.zoom_in)  elements.push({ type: "icon", icon: "mdi:plus",  style: { ...S, bottom: "25px", left: "25px" }, tap_action: { action: "call-service", service: p.zoom_in } });
       if (p.zoom_out) elements.push({ type: "icon", icon: "mdi:minus", style: { ...S, bottom: "0px",  left: "25px" }, tap_action: { action: "call-service", service: p.zoom_out } });
@@ -313,6 +337,12 @@ class CameraGridCardEditor extends HTMLElement {
     s.push({ name: "condition_state", selector: { text: {} } });
     s.push({ name: "fallback_image", selector: { text: {} } });
 
+    // VLC fullscreen option (webrtc + picture-elements)
+    if (cam.type === "webrtc" || cam.type === "picture-elements") {
+      s.push({ name: "use_vlc", selector: { boolean: {} } });
+      s.push({ name: "vlc_url", selector: { text: {} } });
+    }
+
     // Photo/Video link fields (picture-entity + webrtc)
     if (cam.type !== "picture-elements") {
       s.push({ name: "photo_url", selector: { text: {} } });
@@ -330,6 +360,7 @@ class CameraGridCardEditor extends HTMLElement {
       ptz_right: "PTZ Rechts", ptz_zoom_in: "PTZ Zoom+", ptz_zoom_out: "PTZ Zoom-",
       condition_entity: "Nur anzeigen wenn Entität...", condition_state: "...diesen Zustand hat",
       fallback_image: "Fallback-Bild (wenn Bedingung NICHT erfüllt)",
+      use_vlc: "Vollbild über VLC öffnen", vlc_url: "VLC Callback-URL (vlc-x-callback://...)",
       photo_url: "Foto-Link URL (Icon auf dem Bild)", video_url: "Video-Link URL (Icon auf dem Bild)",
       service: "Service",
     }[schema.name] || schema.name;
